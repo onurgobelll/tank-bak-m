@@ -1,0 +1,690 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#141B22">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Tank Takip</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#141B22;--surface:#1D2731;--surface2:#263340;--line:#33434F;
+  --ink:#E8EDF0;--muted:#8FA3B0;--amber:#F0A63C;--brine:#8FBF5A;--alarm:#E0614F;
+  --cond:"Barlow Condensed",'Arial Narrow',system-ui,sans-serif;
+  --body:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.45;
+  padding:env(safe-area-inset-top) 0 110px;overscroll-behavior-y:contain}
+button,input,select,textarea{font:inherit;color:inherit}
+
+header{position:sticky;top:0;z-index:20;background:var(--bg);padding:12px 16px 8px;border-bottom:1px solid var(--line)}
+.top{display:flex;align-items:center;gap:10px}
+.top h1{font-family:var(--cond);font-weight:700;font-size:24px;letter-spacing:.1em;text-transform:uppercase;margin:0;flex:1}
+.icon{background:none;border:1px solid var(--line);border-radius:9px;padding:8px 12px;color:var(--muted);
+  font-family:var(--cond);font-size:15px;letter-spacing:.08em;text-transform:uppercase}
+#ara{margin-top:10px;width:100%;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:16px}
+.chips{display:flex;gap:7px;margin-top:9px;overflow-x:auto;scrollbar-width:none}
+.chips::-webkit-scrollbar{display:none}
+.chip{flex:0 0 auto;border:1px solid var(--line);background:var(--surface);border-radius:999px;
+  padding:6px 13px 5px;font-family:var(--cond);font-size:15px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.chip b{color:var(--ink);font-weight:600;margin-left:5px}
+.chip[aria-pressed="true"]{background:var(--ink);color:#141B22;border-color:var(--ink)}
+.chip[aria-pressed="true"] b{color:#141B22}
+
+main{padding:8px 16px 0}
+.card{display:flex;gap:13px;align-items:center;background:var(--surface);border:1px solid var(--line);
+  border-radius:14px;padding:11px;margin-bottom:9px;width:100%;text-align:left}
+.card:active{background:var(--surface2)}
+.gauge{position:relative;flex:0 0 40px;height:78px;border-radius:5px 5px 8px 8px;border:2px solid var(--line);
+  background:#111820;overflow:hidden}
+.gauge .fill{position:absolute;left:0;right:0;bottom:0;background:var(--brine);opacity:.85}
+.gauge .cap{position:absolute;top:0;left:0;right:0;height:6px;background:var(--surface2)}
+.gauge .gday{position:absolute;inset:auto 0 0 0;text-align:center;font-family:var(--cond);font-size:19px;
+  font-weight:700;line-height:1;padding:5px 0 6px;color:#0F1620}
+.g-warn .fill{background:var(--amber)}.g-late .fill{background:var(--alarm)}
+.info{flex:1;min-width:0}
+.row1{display:flex;align-items:baseline;gap:7px}
+.kod{font-family:var(--cond);font-size:25px;font-weight:700;letter-spacing:.04em;line-height:1}
+.kap{font-family:var(--cond);font-size:14px;color:var(--muted);letter-spacing:.08em}
+.urun{margin:2px 0 7px;font-size:13.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.meta{display:flex;flex-wrap:wrap;gap:5px}
+.pill{font-family:var(--cond);font-size:13px;letter-spacing:.07em;text-transform:uppercase;
+  border:1px solid var(--line);border-radius:6px;padding:2px 7px 1px;color:var(--muted)}
+.pill.on-time{color:var(--brine);border-color:#3F5B33}
+.pill.soon{color:var(--amber);border-color:#6A4E1F}
+.pill.ready{background:var(--brine);color:#101A0C;border-color:var(--brine);font-weight:600}
+.pill.late{background:var(--alarm);color:#2A0B07;border-color:var(--alarm);font-weight:600}
+.empty{border:1px dashed var(--line);border-radius:14px;padding:26px 20px;text-align:center;color:var(--muted)}
+.empty b{display:block;font-family:var(--cond);font-size:19px;letter-spacing:.06em;color:var(--ink);text-transform:uppercase;margin-bottom:5px}
+
+.iebar{display:flex;gap:9px;align-items:center;margin-top:10px}
+.iebar input[type=date]{flex:1;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:16px}
+.ozet{display:flex;gap:9px;margin-bottom:12px}
+.ozet div{flex:1;background:var(--surface);border:1px solid var(--line);border-radius:11px;padding:9px 11px}
+.ozet span{display:block;font-family:var(--cond);font-size:12.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}
+.ozet b{font-family:var(--cond);font-size:23px;font-weight:700}
+.grup{margin-bottom:14px}
+.grup h3{font-family:var(--cond);font-size:17px;letter-spacing:.1em;text-transform:uppercase;color:var(--amber);
+  margin:0 0 7px;border-bottom:1px solid var(--line);padding-bottom:5px;display:flex;justify-content:space-between;align-items:baseline}
+.grup h3 small{color:var(--muted);font-size:13px;letter-spacing:.06em}
+.gorev{display:flex;align-items:center;gap:11px;background:var(--surface);border:1px solid var(--line);
+  border-radius:11px;padding:10px 12px;margin-bottom:7px;width:100%;text-align:left}
+.gorev.ok{opacity:.45}
+.gorev .cb{flex:0 0 24px;height:24px;border:2px solid var(--line);border-radius:7px;position:relative}
+.gorev.ok .cb{background:var(--brine);border-color:var(--brine)}
+.gorev.ok .cb::after{content:"✓";position:absolute;inset:0;text-align:center;line-height:22px;color:#101A0C;font-weight:700}
+.gorev .gk{font-family:var(--cond);font-size:21px;font-weight:700;flex:0 0 62px}
+.gorev .gd{flex:1;min-width:0;font-size:13.5px;color:var(--muted)}
+.gorev .gd b{color:var(--ink);font-weight:600}
+
+.prow{display:flex;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--line);
+  border-radius:11px;padding:9px 11px;margin-bottom:7px;width:100%;text-align:left}
+.prow .pd{font-family:var(--cond);font-size:22px;font-weight:700;flex:0 0 44px;text-align:center}
+.prow .pt{flex:1;min-width:0;font-size:13px;color:var(--muted)}
+.prow .pt b{color:var(--ink)}
+.tags{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 2px}
+.tag{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:8px 14px 7px;
+  font-family:var(--cond);font-size:15px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.tag[aria-pressed="true"]{background:var(--amber);color:#20160A;border-color:var(--amber);font-weight:600}
+.tuzgrid{display:grid;grid-template-columns:repeat(5,1fr);gap:7px;margin-top:8px}
+.tuzgrid label{margin:0 0 3px;font-size:13px}
+.tuzgrid input{padding:9px 6px;text-align:center}
+
+nav{position:fixed;left:0;right:0;bottom:0;z-index:30;background:var(--surface);border-top:1px solid var(--line);
+  display:flex;padding-bottom:env(safe-area-inset-bottom)}
+nav button{flex:1;background:none;border:none;padding:12px 4px 10px;font-family:var(--cond);font-size:16px;
+  letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+nav button b{display:block;font-size:20px;line-height:1;margin-bottom:3px;font-weight:400}
+nav button[aria-pressed="true"]{color:var(--amber)}
+.fab{position:fixed;right:16px;bottom:calc(74px + env(safe-area-inset-bottom));z-index:30;background:var(--amber);
+  color:#20160A;border:none;border-radius:999px;padding:14px 20px 12px;font-family:var(--cond);font-size:17px;
+  font-weight:700;letter-spacing:.08em;text-transform:uppercase;box-shadow:0 8px 22px rgba(0,0,0,.45)}
+
+.panel{position:fixed;inset:0;z-index:40;background:var(--bg);overflow-y:auto;
+  padding:env(safe-area-inset-top) 16px calc(40px + env(safe-area-inset-bottom));animation:up .2s ease}
+@keyframes up{from{transform:translateY(14px);opacity:0}to{transform:none;opacity:1}}
+.pbar{position:sticky;top:0;background:var(--bg);padding:14px 0 12px;display:flex;align-items:center;
+  justify-content:space-between;gap:12px;z-index:2}
+.pbar h2{font-family:var(--cond);font-size:23px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;margin:0}
+label{display:block;font-family:var(--cond);font-size:14.5px;letter-spacing:.11em;text-transform:uppercase;
+  color:var(--muted);margin:14px 0 5px}
+input,select,textarea{width:100%;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px;font-size:16px}
+textarea{min-height:110px;resize:vertical;font-family:ui-monospace,monospace;font-size:13px}
+.two{display:flex;gap:10px}.two>div{flex:1;min-width:0}
+.btn{width:100%;border:none;border-radius:11px;padding:15px;margin-top:16px;font-family:var(--cond);font-size:18px;
+  font-weight:700;letter-spacing:.09em;text-transform:uppercase;background:var(--amber);color:#20160A}
+.btn.ghost{background:none;border:1px solid var(--line);color:var(--muted)}
+.btn.danger{background:none;border:1px solid #6A2C25;color:var(--alarm)}
+.seg{display:flex;gap:8px;margin:6px 0 2px}
+.seg button{flex:1;border:1px solid var(--line);background:var(--surface);border-radius:10px;padding:11px 6px;
+  font-family:var(--cond);font-size:15.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted)}
+.seg button[aria-pressed="true"]{background:var(--ink);color:#141B22;border-color:var(--ink)}
+.stat{display:flex;gap:9px;margin:6px 0 4px}
+.stat div{flex:1;background:var(--surface);border:1px solid var(--line);border-radius:11px;padding:10px 12px}
+.stat span{display:block;font-family:var(--cond);font-size:13px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.stat b{font-family:var(--cond);font-size:25px;font-weight:700}
+.panel h3,.sec{font-family:var(--cond);font-size:17px;letter-spacing:.11em;text-transform:uppercase;color:var(--muted);
+  margin:24px 0 8px;border-bottom:1px solid var(--line);padding-bottom:6px}
+.log{border-bottom:1px solid var(--line);padding:9px 0;display:flex;gap:12px;align-items:baseline}
+.log .d{font-family:var(--cond);font-size:15px;color:var(--muted);flex:0 0 58px}
+.log .v{flex:1;font-family:var(--cond);font-size:17px}
+.log .v em{font-style:normal;color:var(--muted);font-size:14px}
+.log .n{display:block;font-family:var(--body);font-size:13px;color:var(--muted);margin-top:2px}
+.hint{color:var(--muted);font-size:13px;margin-top:8px}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(120px + env(safe-area-inset-bottom));z-index:60;
+  background:var(--ink);color:#141B22;padding:11px 18px;border-radius:999px;font-family:var(--cond);
+  font-size:16px;letter-spacing:.06em;text-transform:uppercase;font-weight:600}
+@media(prefers-reduced-motion:reduce){*{animation:none!important}}
+</style>
+</head>
+<body>
+
+<header id="hdr"></header>
+<main id="ekran"></main>
+<button class="fab" id="fab" style="display:none">+ Tank</button>
+<nav>
+  <button data-v="isemri"><b>☰</b>İş Emri</button>
+  <button data-v="tanklar"><b>◨</b>Tanklar</button>
+  <button data-v="program"><b>⚙</b>Program</button>
+</nav>
+
+<script>
+/* ================= depolama ================= */
+const K_TANK='tanktakip:tanklar', K_PROG='tanktakip:programv2', K_IS='tanktakip:isemri';
+async function sGet(k,vars){
+  try{ if(window.storage){const r=await window.storage.get(k);return r&&r.value?JSON.parse(r.value):vars;} }catch(e){}
+  try{ const s=localStorage.getItem(k);return s?JSON.parse(s):vars; }catch(e){ return vars; }
+}
+async function sSet(k,v){
+  const s=JSON.stringify(v);
+  try{ if(window.storage){await window.storage.set(k,s);return;} }catch(e){}
+  try{ localStorage.setItem(k,s); }catch(e){}
+}
+
+/* ================= görev tanımları ================= */
+const GOREV={D:'Devirdaim 1',D2:'Devirdaim 2+2',DV:'Devirdaim',T:'Tuz 25 KG',B:'Bakım Suyu',U:'Ürün Kontrol',M:'Maya',BK:'Baskı Kontrol'};
+const GOREV_SIRA=['D','D2','DV','T','B','U','M','BK'];
+
+/* ================= varsayılan program (Excel'den) =================
+   Ürün → gün → {g:[görev kodları], tuz:{A..E kg}} */
+function varsayilanProgram(){
+  const P={};
+  const salatalikTuz={
+    3:{A:50,B:50,C:50,D:25,E:25},
+    5:{A:75,B:50,C:50,D:25,E:25},
+    7:{A:100,B:100,C:50,D:50,E:25},
+    9:{A:100,B:100,C:50,D:50,E:25},
+    11:{A:100,B:100,C:100,D:50,E:25}
+  };
+  function salatalik(){
+    const u={};
+    for(let d=2;d<=30;d++) u[d]={g:['D'],tuz:{}};
+    for(const d in salatalikTuz){ u[d].g.push('T'); u[d].tuz={...salatalikTuz[d]}; }
+    [4,8,12,16,20,25,29].forEach(d=>u[d].g.push('B'));
+    [15,20,25].forEach(d=>u[d].g.push('U'));
+    [5,30].forEach(d=>u[d].g.push('M'));
+    return u;
+  }
+  P['Salatalık No.1']=salatalik();
+  P['Salatalık No.2']=salatalik();
+  P['Salatalık No.3']=salatalik();
+
+  /* Domates: 2-16 devirdaim; tuz 3/5/7/9/11; bakım 4/8/12/16 + 20/24 tek başına; ürün kontrol 10/15/25 */
+  const dom={};
+  for(let d=2;d<=16;d++) dom[d]={g:['D'],tuz:{}};
+  [[3,{A:50,B:50,C:50,D:25,E:25}],[5,{A:75,B:50,C:50,D:25,E:25}],[7,{A:100,B:100,C:50,D:50,E:25}],[9,{A:100,B:100,C:50,D:50,E:25}],[11,{A:100,B:100,C:100,D:50,E:25}]]
+    .forEach(([d,t])=>{dom[d].g.push('T');dom[d].tuz=t;});
+  [4,8,12,16].forEach(d=>dom[d].g.push('B'));
+  [10,15].forEach(d=>dom[d].g.push('U'));
+  dom[20]={g:['B'],tuz:{}}; dom[24]={g:['B'],tuz:{}}; dom[25]={g:['U'],tuz:{}};
+  P['Domates']=dom;
+
+  /* Lahana: 2-15 devirdaim 2+2; bakım 4/7/10/15; 20 ürün kontrol */
+  const lah={};
+  for(let d=2;d<=15;d++) lah[d]={g:['D2'],tuz:{}};
+  [4,7,10,15].forEach(d=>lah[d].g.push('B'));
+  lah[20]={g:['U'],tuz:{}};
+  P['Lahana']=lah;
+
+  /* Kelek: 2-15 devirdaim; bakım 4/7/10/15; maya 10; 20 bakım+ürün kontrol */
+  const kel={};
+  for(let d=2;d<=15;d++) kel[d]={g:['D'],tuz:{}};
+  [4,7,10,15].forEach(d=>kel[d].g.push('B'));
+  kel[10].g.push('M');
+  kel[20]={g:['B','U'],tuz:{}};
+  P['Kelek']=kel;
+
+  /* Havuç: 2-7 devirdaim; bakım 4 (+8/13/20 tek başına); 15 ürün kontrol */
+  const hav={};
+  for(let d=2;d<=7;d++) hav[d]={g:['D'],tuz:{}};
+  hav[4].g.push('B');
+  hav[8]={g:['B'],tuz:{}}; hav[13]={g:['B'],tuz:{}};
+  hav[15]={g:['U'],tuz:{}}; hav[20]={g:['B'],tuz:{}};
+  P['Havuç']=hav;
+
+  /* Şeftali Çağlası: 2-4 baskı kontrol; 5-12 devirdaim+bakım suyu; 8/15/20 bakım+ürün kontrol */
+  const sef={};
+  [2,3,4].forEach(d=>sef[d]={g:['BK'],tuz:{}});
+  for(let d=5;d<=12;d++) sef[d]={g:['DV','B'],tuz:{}};
+  sef[8]={g:['B','U'],tuz:{}};
+  sef[15]={g:['B','U'],tuz:{}};
+  sef[20]={g:['B','U'],tuz:{}};
+  P['Şeftali Çağlası']=sef;
+
+  /* Acur */
+  P['Acur']={4:{g:['B'],tuz:{}},8:{g:['B','U'],tuz:{}},12:{g:['B'],tuz:{}},15:{g:['U'],tuz:{}},20:{g:['B','U'],tuz:{}}};
+
+  /* Çorbacı Biber: 2-7 devirdaim; 4 bakım; 8 bakım+ÜK; 15 bakım; 20 bakım+ÜK */
+  const cor={};
+  for(let d=2;d<=7;d++) cor[d]={g:['D'],tuz:{}};
+  cor[4].g.push('B');
+  cor[8]={g:['B','U'],tuz:{}}; cor[15]={g:['B'],tuz:{}}; cor[20]={g:['B','U'],tuz:{}};
+  P['Çorbacı Biber']=cor;
+
+  /* Erik Turşusu */
+  P['Erik Turşusu']={1:{g:['U'],tuz:{}},2:{g:['U'],tuz:{}},3:{g:['D'],tuz:{}},4:{g:['D'],tuz:{}},
+    5:{g:['U'],tuz:{}},6:{g:['D'],tuz:{}},7:{g:['U'],tuz:{}},8:{g:['D'],tuz:{}},9:{g:['D'],tuz:{}},15:{g:['U'],tuz:{}}};
+
+  P['Diğer']={};
+  return P;
+}
+
+/* ================= durum ================= */
+let tanklar=[], program={}, isemri={}, gorunum='isemri', filtre='hepsi', arama='', ieTarih=null, progUrun=null;
+const bugunISO=()=>new Date().toISOString().slice(0,10);
+const gunFark=(a,b)=>Math.round((new Date(b+'T00:00')-new Date(a+'T00:00'))/86400000);
+const kisaTarih=t=>{const d=new Date(t+'T00:00');return d.getDate()+'.'+(d.getMonth()+1)};
+const gunTarihte=(t,tar)=>gunFark(t.baslangic,tar)+1;
+const gun=t=>gunTarihte(t,t.bosaltildi||bugunISO());
+const seri=t=>(t.kod.match(/^[A-ZÇĞİÖŞÜ]/)||[''])[0];
+const urunler=()=>Object.keys(program);
+function durum(t){
+  if(t.bosaltildi) return 'bosaltildi';
+  const g=gun(t),h=+t.hedefGun;
+  if(g>h+3) return 'gecti';
+  if(g>=h) return 'hazir';
+  if(g>=h-2) return 'yakin';
+  return 'devam';
+}
+const ETIKET={devam:'Fermente',yakin:'Yaklaşıyor',hazir:'Hazır',gecti:'Süre geçti',bosaltildi:'Boşaltıldı'};
+const SINIF={devam:'on-time',yakin:'soon',hazir:'ready',gecti:'late',bosaltildi:''};
+function toast(m){const d=document.createElement('div');d.className='toast';d.textContent=m;
+  document.body.appendChild(d);setTimeout(()=>d.remove(),1700);}
+
+function isEmriUret(tarih){
+  const out=[];
+  tanklar.forEach(t=>{
+    if(t.bosaltildi) return;
+    const g=gunTarihte(t,tarih);
+    if(g<1) return;
+    const up=program[t.urun];
+    const p=up&&up[g];
+    if(!p||!p.g||!p.g.length) return;
+    const s=seri(t);
+    out.push({t,g,gorevler:p.g.slice(),tuzKg:p.g.includes('T')?(p.tuz&&p.tuz[s]||null):null});
+  });
+  out.sort((a,b)=>a.t.kod.localeCompare(b.t.kod,'tr',{numeric:true}));
+  return out;
+}
+
+/* ================= gezinme ================= */
+document.querySelector('nav').onclick=e=>{
+  const b=e.target.closest('[data-v]'); if(!b) return;
+  gorunum=b.dataset.v; ciz();
+};
+function ciz(){
+  document.querySelectorAll('nav [data-v]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.v===gorunum));
+  document.getElementById('fab').style.display=gorunum==='tanklar'?'':'none';
+  if(gorunum==='tanklar') cizTanklar();
+  else if(gorunum==='isemri') cizIsEmri();
+  else cizProgram();
+}
+
+/* ---------- tanklar ---------- */
+function cizTanklar(){
+  const say={hepsi:0,hazir:0,yakin:0,gecti:0,bosaltildi:0};
+  tanklar.forEach(t=>{
+    if(t.bosaltildi){say.bosaltildi++;return;}
+    say.hepsi++; const d=durum(t); if(say[d]!==undefined) say[d]++;
+  });
+  document.getElementById('hdr').innerHTML=`
+    <div class="top"><h1>Tanklar</h1><button class="icon" id="btnYedek">Yedek</button></div>
+    <input id="ara" placeholder="Tank ara: A-14, biber…" value="${arama}" autocomplete="off">
+    <div class="chips">${[['hepsi','Aktif'],['hazir','Hazır'],['yakin','Yaklaşan'],['gecti','Geçen'],['bosaltildi','Boşaltılan']]
+      .map(([k,ad])=>`<button class="chip" data-f="${k}" aria-pressed="${filtre===k}">${ad}<b>${say[k]||0}</b></button>`).join('')}</div>`;
+  document.getElementById('btnYedek').onclick=yedek;
+  document.getElementById('ara').oninput=e=>{arama=e.target.value;cizTanklar();};
+  document.getElementById('hdr').querySelector('.chips').onclick=e=>{
+    const b=e.target.closest('.chip'); if(b){filtre=b.dataset.f;cizTanklar();}
+  };
+
+  const q=arama.trim().toLocaleLowerCase('tr');
+  let liste=tanklar.filter(t=>{
+    if(q && !((t.kod+' '+(t.urun||'')).toLocaleLowerCase('tr').includes(q))) return false;
+    if(filtre==='bosaltildi') return !!t.bosaltildi;
+    if(t.bosaltildi) return false;
+    if(filtre==='hepsi') return true;
+    return durum(t)===filtre;
+  });
+  const sira={gecti:0,hazir:1,yakin:2,devam:3,bosaltildi:4};
+  liste.sort((a,b)=>sira[durum(a)]-sira[durum(b)]||a.kod.localeCompare(b.kod,'tr',{numeric:true}));
+
+  document.getElementById('ekran').innerHTML = liste.length ? liste.map(t=>{
+    const g=gun(t),d=durum(t);
+    const yuzde=Math.max(6,Math.min(100,Math.round(g/ +t.hedefGun*100)));
+    const gcls=d==='gecti'?'g-late':(d==='yakin'||d==='hazir')?'g-warn':'';
+    const son=(t.olcumler||[])[0];
+    return `<button class="card" data-id="${t.id}">
+      <div class="gauge ${gcls}"><div class="cap"></div><div class="fill" style="height:${yuzde}%"></div><div class="gday">${g}</div></div>
+      <div class="info">
+        <div class="row1"><span class="kod">${t.kod}</span><span class="kap">${t.kapasite||''}</span></div>
+        <div class="urun">${t.urun||'—'}</div>
+        <div class="meta">
+          <span class="pill ${SINIF[d]}">${ETIKET[d]}</span>
+          <span class="pill">${g}/${t.hedefGun} gün</span>
+          ${son?`<span class="pill">pH ${son.ph||'—'}</span>`:''}
+        </div>
+      </div>
+    </button>`;
+  }).join('') : `<div class="empty"><b>Kayıt yok</b>${q?'Arama sonucu boş.':'+ Tank ile dolum kaydı aç.'}</div>`;
+  document.getElementById('ekran').onclick=e=>{
+    const c=e.target.closest('.card'); if(c) detay(c.dataset.id);
+  };
+}
+document.getElementById('fab').onclick=()=>form();
+
+/* ---------- iş emri ---------- */
+function cizIsEmri(){
+  if(!ieTarih) ieTarih=bugunISO();
+  const liste=isEmriUret(ieTarih);
+  const done=isemri[ieTarih]||{};
+  const grup={};
+  liste.forEach(x=>x.gorevler.forEach(k=>{(grup[k]=grup[k]||[]).push(x);}));
+  const toplamGorev=liste.reduce((n,x)=>n+x.gorevler.length,0);
+  let bitti=0;
+  liste.forEach(x=>x.gorevler.forEach(k=>{ if(done[x.t.id+':'+k]) bitti++; }));
+  const tuzToplam=liste.reduce((n,x)=>n+(x.tuzKg||0),0);
+
+  document.getElementById('hdr').innerHTML=`
+    <div class="top"><h1>İş Emri</h1><button class="icon" id="btnPay">Paylaş</button></div>
+    <div class="iebar">
+      <button class="icon" id="dG">‹</button>
+      <input type="date" id="ieT" value="${ieTarih}">
+      <button class="icon" id="dI">›</button>
+    </div>`;
+  document.getElementById('ieT').onchange=e=>{ieTarih=e.target.value||bugunISO();cizIsEmri();};
+  document.getElementById('dG').onclick=()=>{const d=new Date(ieTarih+'T00:00');d.setDate(d.getDate()-1);ieTarih=d.toISOString().slice(0,10);cizIsEmri();};
+  document.getElementById('dI').onclick=()=>{const d=new Date(ieTarih+'T00:00');d.setDate(d.getDate()+1);ieTarih=d.toISOString().slice(0,10);cizIsEmri();};
+  document.getElementById('btnPay').onclick=()=>paylas(liste);
+
+  const e=document.getElementById('ekran');
+  if(!liste.length){
+    e.innerHTML=`<div class="empty"><b>Bu tarihte iş yok</b>${tanklar.some(t=>!t.bosaltildi)?'Programda bu güne görev tanımlı değil.':'Önce Tanklar sekmesinden dolum kaydı aç.'}</div>`;
+    return;
+  }
+  e.innerHTML=`
+    <div class="ozet">
+      <div><span>Görev</span><b>${bitti}/${toplamGorev}</b></div>
+      <div><span>Tank</span><b>${liste.length}</b></div>
+      <div><span>Tuz</span><b>${tuzToplam?tuzToplam+' kg':'—'}</b></div>
+    </div>
+    ${GOREV_SIRA.filter(k=>grup[k]).map(k=>`
+      <div class="grup">
+        <h3>${GOREV[k]}<small>${grup[k].length} tank${k==='T'?' · '+grup[k].reduce((n,x)=>n+(x.tuzKg||0),0)+' kg':''}</small></h3>
+        ${grup[k].map(x=>{
+          const key=x.t.id+':'+k, ok=!!done[key];
+          return `<button class="gorev ${ok?'ok':''}" data-key="${key}">
+            <span class="cb"></span>
+            <span class="gk">${x.t.kod}</span>
+            <span class="gd"><b>${x.g}. gün</b> · ${x.t.urun||''}${k==='T'&&x.tuzKg?` · <b>${x.tuzKg} kg</b>`:''}</span>
+          </button>`;
+        }).join('')}
+      </div>`).join('')}`;
+  e.onclick=async ev=>{
+    const g=ev.target.closest('.gorev'); if(!g) return;
+    const d=isemri[ieTarih]=isemri[ieTarih]||{};
+    d[g.dataset.key]=!d[g.dataset.key];
+    if(!d[g.dataset.key]) delete d[g.dataset.key];
+    Object.keys(isemri).forEach(t=>{ if(gunFark(t,bugunISO())>60) delete isemri[t]; });
+    await sSet(K_IS,isemri); cizIsEmri();
+  };
+}
+
+function paylas(liste){
+  if(!liste.length){toast('Paylaşılacak iş yok');return;}
+  const tar=new Date(ieTarih+'T00:00').toLocaleDateString('tr-TR',{day:'numeric',month:'long'});
+  let m=`İŞ EMRİ · ${tar}\n`;
+  const grup={};
+  liste.forEach(x=>x.gorevler.forEach(k=>{(grup[k]=grup[k]||[]).push(x);}));
+  GOREV_SIRA.filter(k=>grup[k]).forEach(k=>{
+    m+=`\n${GOREV[k]}:\n`;
+    grup[k].forEach(x=>{ m+=`  ${x.t.kod} (${x.g}. gün, ${x.t.urun})${k==='T'&&x.tuzKg?' — '+x.tuzKg+' kg':''}\n`; });
+  });
+  if(navigator.share){ navigator.share({text:m}).catch(()=>{}); }
+  else if(navigator.clipboard){ navigator.clipboard.writeText(m).then(()=>toast('Panoya kopyalandı')); }
+}
+
+/* ---------- program ---------- */
+function cizProgram(){
+  const us=urunler();
+  if(!progUrun||!us.includes(progUrun)) progUrun=us[0];
+  document.getElementById('hdr').innerHTML=`
+    <div class="top"><h1>Program</h1><button class="icon" id="pSifirla">Varsayılan</button></div>
+    <div class="chips">${us.map(u=>`<button class="chip" data-u="${u}" aria-pressed="${progUrun===u}">${u}</button>`).join('')}</div>`;
+  document.getElementById('pSifirla').onclick=async()=>{
+    if(!confirm('Tüm program varsayılana (Excel şablonu) dönsün mü?')) return;
+    program=varsayilanProgram(); await sSet(K_PROG,program); cizProgram(); toast('Sıfırlandı');
+  };
+  document.getElementById('hdr').querySelector('.chips').onclick=e=>{
+    const b=e.target.closest('.chip'); if(b){progUrun=b.dataset.u;cizProgram();}
+  };
+  const up=program[progUrun]||{};
+  const gunler=Object.keys(up).sort((a,b)=>a-b);
+  document.getElementById('ekran').innerHTML=(gunler.length?gunler.map(d=>{
+    const p=up[d];
+    const ad=(p.g||[]).map(k=>GOREV[k]).join(' | ')||'—';
+    const tuz=Object.entries(p.tuz||{}).map(([s,v])=>s+':'+v).join(' ');
+    return `<button class="prow" data-d="${d}">
+      <span class="pd">${d}</span>
+      <span class="pt"><b>${ad}</b>${tuz?`<br>${tuz} kg`:''}</span>
+      <span class="pe icon">Düzenle</span>
+    </button>`;
+  }).join(''):'<div class="empty"><b>Program boş</b>Bu ürüne gün ekle.</div>')+
+  `<button class="btn ghost" id="gunEkle">+ Gün ekle</button>
+   <p class="hint">Seri harfi = tank kodunun ilk harfi (A–E). Tuz kg değerleri seriye göre uygulanır.</p>`;
+  document.getElementById('ekran').onclick=e=>{
+    if(e.target.closest('#gunEkle')){
+      const d=prompt('Kaçıncı gün?');
+      if(d&&+d>0){ programGun(+d); }
+      return;
+    }
+    const r=e.target.closest('.prow'); if(r) programGun(+r.dataset.d);
+  };
+}
+
+function programGun(d){
+  const up=program[progUrun]=program[progUrun]||{};
+  const p=up[d]||{g:[],tuz:{}};
+  const pn=panel(`
+    <div class="pbar"><h2>${progUrun} · ${d}. gün</h2><button class="icon" data-kapat>Kapat</button></div>
+    <label>Görevler</label>
+    <div class="tags">${GOREV_SIRA.map(k=>
+      `<button class="tag" data-g="${k}" aria-pressed="${(p.g||[]).includes(k)}">${GOREV[k]}</button>`).join('')}</div>
+    <label>Tuz miktarı (kg, seriye göre)</label>
+    <div class="tuzgrid">${['A','B','C','D','E'].map(s=>
+      `<div><label>${s}</label><input type="number" id="tz${s}" inputmode="numeric" value="${p.tuz&&p.tuz[s]||''}"></div>`).join('')}</div>
+    <button class="btn" id="pKaydet">Kaydet</button>
+    <button class="btn danger" id="pSil">Bu günü programdan sil</button>
+  `);
+  pn.querySelector('.tags').onclick=e=>{
+    const b=e.target.closest('.tag'); if(!b) return;
+    b.setAttribute('aria-pressed',b.getAttribute('aria-pressed')!=='true');
+  };
+  pn.querySelector('#pKaydet').onclick=async()=>{
+    const g=[...pn.querySelectorAll('.tag[aria-pressed="true"]')].map(b=>b.dataset.g);
+    const tuz={};
+    ['A','B','C','D','E'].forEach(s=>{const v=+pn.querySelector('#tz'+s).value;if(v)tuz[s]=v;});
+    up[d]={g,tuz};
+    await sSet(K_PROG,program); kapat(); cizProgram(); toast(d+'. gün kaydedildi');
+  };
+  pn.querySelector('#pSil').onclick=async()=>{
+    delete up[d];
+    await sSet(K_PROG,program); kapat(); cizProgram(); toast(d+'. gün silindi');
+  };
+}
+
+/* ================= panel / form / detay ================= */
+function panel(html){
+  kapat();
+  const p=document.createElement('div');p.className='panel';p.id='panel';p.innerHTML=html;
+  document.body.appendChild(p);
+  p.querySelectorAll('[data-kapat]').forEach(b=>b.onclick=kapat);
+  return p;
+}
+const kapat=()=>{const p=document.getElementById('panel');if(p)p.remove();};
+
+function form(id){
+  const t=id?tanklar.find(x=>x.id===id):null;
+  const us=urunler();
+  const p=panel(`
+    <div class="pbar"><h2>${t?'Tankı düzenle':'Yeni dolum'}</h2><button class="icon" data-kapat>Kapat</button></div>
+    ${t?'':`<div class="seg"><button id="m1" aria-pressed="true">Tek tank</button><button id="m2" aria-pressed="false">Toplu ekle</button></div>`}
+    <div id="tek">
+      <div class="two">
+        <div><label>Tank kodu</label><input id="f_kod" value="${t?t.kod:''}" placeholder="A-14" autocapitalize="characters"></div>
+        <div><label>Kapasite</label><input id="f_kap" value="${t?t.kapasite||'':''}" placeholder="10T"></div>
+      </div>
+    </div>
+    <div id="toplu" style="display:none">
+      <div class="two">
+        <div><label>Seri</label><input id="b_seri" placeholder="A" autocapitalize="characters"></div>
+        <div><label>İlk no</label><input type="number" id="b_bas" value="1"></div>
+        <div><label>Son no</label><input type="number" id="b_son" value="20"></div>
+      </div>
+      <label>Kapasite</label><input id="b_kap" placeholder="10T">
+    </div>
+    <label>Ürün</label>
+    <select id="f_urun">${us.map(u=>`<option ${t&&t.urun===u?'selected':''}>${u}</option>`).join('')}</select>
+    <div class="two">
+      <div><label>Dolum tarihi</label><input type="date" id="f_bas" value="${t?t.baslangic:bugunISO()}"></div>
+      <div><label>Hedef gün</label><input type="number" id="f_hedef" value="${t?t.hedefGun:21}" min="1"></div>
+    </div>
+    <label>Not</label><input id="f_not" value="${t?(t.notlar||''):''}" placeholder="Parti no, tedarikçi, tuz oranı…">
+    <button class="btn" id="f_kaydet">Kaydet</button>
+    <p class="hint">1. gün = dolum günü. İş emri, ürünün programına göre otomatik çıkar.</p>
+  `);
+  const q=s=>p.querySelector(s);
+  let mod='tek';
+  if(!t){
+    q('#m1').onclick=()=>{mod='tek';q('#m1').setAttribute('aria-pressed','true');q('#m2').setAttribute('aria-pressed','false');q('#tek').style.display='';q('#toplu').style.display='none';};
+    q('#m2').onclick=()=>{mod='toplu';q('#m2').setAttribute('aria-pressed','true');q('#m1').setAttribute('aria-pressed','false');q('#toplu').style.display='';q('#tek').style.display='none';};
+  }
+  q('#f_kaydet').onclick=async()=>{
+    const ortak={
+      urun:q('#f_urun').value,
+      baslangic:q('#f_bas').value||bugunISO(),
+      hedefGun:+q('#f_hedef').value||21,
+      notlar:q('#f_not').value.trim()
+    };
+    if(mod==='toplu'){
+      const sr=q('#b_seri').value.trim().toUpperCase();
+      const b=+q('#b_bas').value, s=+q('#b_son').value, kap=q('#b_kap').value.trim().toUpperCase();
+      if(!sr||!(s>=b)){ toast('Seri ve numaraları kontrol et'); return; }
+      let n=0;
+      for(let i=b;i<=s;i++){
+        const kod=sr+'-'+i;
+        if(tanklar.some(x=>x.kod===kod&&!x.bosaltildi)) continue;
+        tanklar.push({id:'t'+Date.now()+'_'+i,kod,kapasite:kap,...ortak,bosaltildi:'',olcumler:[]});
+        n++;
+      }
+      await sSet(K_TANK,tanklar); kapat(); ciz(); toast(n+' tank eklendi');
+      return;
+    }
+    const kod=q('#f_kod').value.trim().toUpperCase();
+    if(!kod){ q('#f_kod').focus(); return; }
+    const veri={kod,kapasite:q('#f_kap').value.trim().toUpperCase(),...ortak};
+    if(t) Object.assign(t,veri);
+    else tanklar.push({id:'t'+Date.now(),...veri,bosaltildi:'',olcumler:[]});
+    await sSet(K_TANK,tanklar); kapat(); ciz(); toast(t?'Güncellendi':'Tank eklendi');
+  };
+}
+
+function detay(id){
+  const t=tanklar.find(x=>x.id===id); if(!t) return;
+  const g=gun(t), d=durum(t), kalan=+t.hedefGun-g;
+  const up=program[t.urun]||{};
+  const bugunProg=up[g];
+  const p=panel(`
+    <div class="pbar"><h2>${t.kod} <span class="kap">${t.kapasite||''}</span></h2><button class="icon" data-kapat>Kapat</button></div>
+    <div class="meta" style="margin-bottom:12px">
+      <span class="pill ${SINIF[d]}">${ETIKET[d]}</span>
+      <span class="pill">${t.urun||'—'}</span>
+      ${!t.bosaltildi&&bugunProg&&bugunProg.g.length?`<span class="pill soon">Bugün: ${bugunProg.g.map(k=>GOREV[k]).join(' + ')}</span>`:''}
+    </div>
+    <div class="stat">
+      <div><span>Gün</span><b>${g}/${t.hedefGun}</b></div>
+      <div><span>${kalan>=0?'Kalan':'Aşım'}</span><b>${Math.abs(kalan)}</b></div>
+      <div><span>Dolum</span><b>${kisaTarih(t.baslangic)}</b></div>
+    </div>
+    ${t.notlar?`<p class="hint">${t.notlar}</p>`:''}
+    ${t.bosaltildi?'':`
+      <h3>Ölçüm ekle</h3>
+      <div class="two">
+        <div><label>pH</label><input type="number" step="0.01" id="o_ph" inputmode="decimal"></div>
+        <div><label>Tuz %</label><input type="number" step="0.1" id="o_tuz" inputmode="decimal"></div>
+        <div><label>°C</label><input type="number" step="0.1" id="o_sic" inputmode="decimal"></div>
+      </div>
+      <input id="o_not" placeholder="Köpük, koku, tuz takviyesi…" style="margin-top:10px">
+      <button class="btn" id="o_kaydet">Ölçümü kaydet</button>`}
+    <h3>Ölçüm geçmişi</h3>
+    ${(t.olcumler||[]).length?t.olcumler.map(o=>`
+      <div class="log"><span class="d">${kisaTarih(o.tarih)}</span>
+      <span class="v">pH ${o.ph||'—'} <em>·</em> Tuz ${o.tuz||'—'}${o.tuz?'%':''} <em>·</em> ${o.sicaklik||'—'}${o.sicaklik?'°':''}
+      ${o.not?`<span class="n">${o.not}</span>`:''}</span></div>`).join(''):'<p class="hint">Henüz ölçüm girilmedi.</p>'}
+    <h3>İşlemler</h3>
+    <button class="btn ghost" id="duzenle">Tankı düzenle</button>
+    ${t.bosaltildi
+      ?`<button class="btn ghost" id="geriac">Boşaltmayı geri al</button><p class="hint">Boşaltma: ${kisaTarih(t.bosaltildi)}</p>`
+      :`<button class="btn" id="bosalt">Tankı boşalt</button>`}
+    <button class="btn danger" id="sil">Tankı sil</button>
+  `);
+  const q=s=>p.querySelector(s);
+  if(!t.bosaltildi){
+    q('#o_kaydet').onclick=async()=>{
+      const o={tarih:bugunISO(),ph:q('#o_ph').value,tuz:q('#o_tuz').value,sicaklik:q('#o_sic').value,not:q('#o_not').value.trim()};
+      if(!o.ph&&!o.tuz&&!o.sicaklik&&!o.not) return;
+      (t.olcumler=t.olcumler||[]).unshift(o);
+      await sSet(K_TANK,tanklar); detay(id); toast('Ölçüm kaydedildi');
+    };
+    q('#bosalt').onclick=async()=>{t.bosaltildi=bugunISO();await sSet(K_TANK,tanklar);kapat();ciz();toast(t.kod+' boşaltıldı');};
+  }else{
+    q('#geriac').onclick=async()=>{t.bosaltildi='';await sSet(K_TANK,tanklar);detay(id);};
+  }
+  q('#duzenle').onclick=()=>form(id);
+  q('#sil').onclick=async()=>{
+    if(!confirm(t.kod+' ve tüm ölçümleri silinsin mi?')) return;
+    tanklar=tanklar.filter(x=>x.id!==id); await sSet(K_TANK,tanklar); kapat(); ciz();
+  };
+}
+
+/* ================= yedek ================= */
+function csv(){
+  const b=['Tank;Kapasite;Urun;Dolum;Gun;HedefGun;Durum;SonPH;SonTuz;Not'];
+  tanklar.forEach(t=>{
+    const s=(t.olcumler||[])[0]||{};
+    b.push([t.kod,t.kapasite||'',t.urun||'',t.baslangic,gun(t),t.hedefGun,ETIKET[durum(t)],s.ph||'',s.tuz||'',(t.notlar||'').replace(/;/g,',')].join(';'));
+  });
+  return b.join('\n');
+}
+function indir(ad,icerik,tip){
+  try{
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(new Blob([icerik],{type:tip}));
+    a.download=ad; a.click(); URL.revokeObjectURL(a.href);
+  }catch(e){ toast('İndirilemedi'); }
+}
+function yedek(){
+  const p=panel(`
+    <div class="pbar"><h2>Yedek</h2><button class="icon" data-kapat>Kapat</button></div>
+    <p class="hint">${tanklar.length} tank kayıtlı. Yedek dosyası tankları + programı içerir.</p>
+    <button class="btn ghost" id="y_json">Yedek dosyası indir (.json)</button>
+    <button class="btn ghost" id="y_csv">Excel için indir (.csv)</button>
+    <div class="sec">Geri yükle</div>
+    <label>Yedek metnini yapıştır</label>
+    <textarea id="y_metin"></textarea>
+    <button class="btn" id="y_yukle">Geri yükle (üzerine yazar)</button>
+  `);
+  const q=s=>p.querySelector(s);
+  q('#y_json').onclick=()=>indir('tank-takip-'+bugunISO()+'.json',JSON.stringify({tanklar,program}),'application/json');
+  q('#y_csv').onclick=()=>indir('tank-takip-'+bugunISO()+'.csv','\ufeff'+csv(),'text/csv');
+  q('#y_yukle').onclick=async()=>{
+    try{
+      const v=JSON.parse(q('#y_metin').value);
+      if(Array.isArray(v)){ tanklar=v; }
+      else{ tanklar=v.tanklar||[]; if(v.program) program=v.program; }
+      await sSet(K_TANK,tanklar); await sSet(K_PROG,program);
+      kapat(); ciz(); toast('Yedek yüklendi');
+    }catch(e){ toast('Metin okunamadı'); }
+  };
+}
+
+/* ================= başlat ================= */
+(async()=>{
+  tanklar=await sGet(K_TANK,[]);
+  program=await sGet(K_PROG,null);
+  if(!program){ program=varsayilanProgram(); await sSet(K_PROG,program); }
+  isemri=await sGet(K_IS,{});
+  /* eski sürümden gelen ürün adlarını eşle */
+  const esle={'Salatalık No.1':'Salatalık No.1'};
+  tanklar.forEach(t=>{ if(t.urun&&!program[t.urun]){ const k=Object.keys(program).find(u=>u.toLocaleLowerCase('tr')===t.urun.toLocaleLowerCase('tr')); if(k) t.urun=k; } });
+  ciz();
+})();
+</script>
+</body>
+</html>
