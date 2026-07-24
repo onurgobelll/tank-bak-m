@@ -144,7 +144,18 @@ textarea{min-height:110px;resize:vertical;font-family:ui-monospace,monospace;fon
   background:var(--ink);color:#141B22;padding:11px 18px;border-radius:999px;font-family:var(--cond);
   font-size:16px;letter-spacing:.06em;text-transform:uppercase;font-weight:600}
 @media(prefers-reduced-motion:reduce){*{animation:none!important}}
+#qrYazdirAlani{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-top:14px}
+.qrKart{border:1px solid var(--line);border-radius:12px;padding:10px;text-align:center;background:#fff}
+.qrKutu{display:flex;justify-content:center;margin-bottom:6px}
+.qrEtiket{font-family:var(--cond);font-weight:700;font-size:18px;color:#111}
+@media print{
+  body *{visibility:hidden}
+  #qrYazdirAlani,#qrYazdirAlani *{visibility:visible}
+  #qrYazdirAlani{position:absolute;left:0;top:0;width:100%}
+  .qrKart{break-inside:avoid}
+}
 </style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 </head>
 <body>
 
@@ -158,16 +169,75 @@ textarea{min-height:110px;resize:vertical;font-family:ui-monospace,monospace;fon
 </nav>
 
 <script>
-/* ================= depolama ================= */
+/* ================= depolama =================
+   PAYLAŞIMLI VERİ İÇİN: aşağıdaki FIREBASE_URL'e Firebase Realtime Database
+   adresini yapıştır (örn: 'https://tank-takip-default-rtdb.firebaseio.com').
+   Boş bırakılırsa uygulama sadece bu telefonda çalışır (eski davranış). */
+const FIREBASE_URL = '';
 const K_TANK='tanktakip:tanklar', K_PROG='tanktakip:programv2', K_IS='tanktakip:isemri';
+const ADMIN_PIN='2026';
+let yonetici=false;
+
+async function fbGet(k){
+  if(!FIREBASE_URL) return undefined;
+  try{
+    const r=await fetch(FIREBASE_URL.replace(/\/$/,'')+'/'+encodeURIComponent(k)+'.json');
+    if(!r.ok) return undefined;
+    const data=await r.json();
+    return data===null?undefined:data;
+  }catch(e){ return undefined; }
+}
+async function fbSet(k,v){
+  if(!FIREBASE_URL) return false;
+  try{
+    await fetch(FIREBASE_URL.replace(/\/$/,'')+'/'+encodeURIComponent(k)+'.json',{method:'PUT',body:JSON.stringify(v)});
+    return true;
+  }catch(e){ return false; }
+}
 async function sGet(k,vars){
+  const uzak=await fbGet(k);
+  if(uzak!==undefined){ try{ localStorage.setItem(k,JSON.stringify(uzak)); }catch(e){} return uzak; }
   try{ if(window.storage){const r=await window.storage.get(k);return r&&r.value?JSON.parse(r.value):vars;} }catch(e){}
   try{ const s=localStorage.getItem(k);return s?JSON.parse(s):vars; }catch(e){ return vars; }
 }
 async function sSet(k,v){
   const s=JSON.stringify(v);
+  await fbSet(k,v);
   try{ if(window.storage){await window.storage.set(k,s);return;} }catch(e){}
   try{ localStorage.setItem(k,s); }catch(e){}
+}
+const K_AD='tanktakip:kullaniciAdi';
+function kullaniciAdi(){
+  let ad='';
+  try{ ad=localStorage.getItem(K_AD)||''; }catch(e){}
+  if(!ad){
+    ad=(prompt('Adın ne? (onaylarda görünecek)')||'').trim();
+    if(ad){ try{ localStorage.setItem(K_AD,ad); }catch(e){} }
+  }
+  return ad||'?';
+}
+function saatSimdi(){
+  const d=new Date();
+  return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+}
+function yoneticiGirisi(){
+  if(yonetici){ yonetici=false; toast('Yönetici modu kapatıldı'); ciz(); return; }
+  const pin=prompt('Yönetici PIN:');
+  if(pin===null) return;
+  if(pin===ADMIN_PIN){ yonetici=true; toast('Yönetici modu açık'); ciz(); }
+  else toast('Yanlış PIN');
+}
+function canliSenkronBaslat(){
+  if(!FIREBASE_URL) return;
+  setInterval(async()=>{
+    if(document.getElementById('panel')) return; // düzenleme sırasında araya girme
+    const [t,p,i]=await Promise.all([fbGet(K_TANK),fbGet(K_PROG),fbGet(K_IS)]);
+    let degisti=false;
+    if(t!==undefined && JSON.stringify(t)!==JSON.stringify(tanklar)){ tanklar=t; degisti=true; }
+    if(p!==undefined && JSON.stringify(p)!==JSON.stringify(program)){ program=p; degisti=true; }
+    if(i!==undefined && JSON.stringify(i)!==JSON.stringify(isemri)){ isemri=i; degisti=true; }
+    if(degisti){ if(qrGoruntuKod) cizTankIsEmri(qrGoruntuKod); else ciz(); }
+  },15000);
 }
 
 /* ================= görev tanımları ================= */
@@ -259,7 +329,7 @@ function varsayilanProgram(){
 }
 
 /* ================= durum ================= */
-let tanklar=[], program={}, isemri={}, gorunum='isemri', filtre='hepsi', arama='', ieTarih=null, progUrun=null;
+let tanklar=[], program={}, isemri={}, gorunum='isemri', filtre='hepsi', arama='', ieTarih=null, progUrun=null, qrGoruntuKod=null;
 const bugunISO=()=>new Date().toISOString().slice(0,10);
 const gunFark=(a,b)=>Math.round((new Date(b+'T00:00')-new Date(a+'T00:00'))/86400000);
 const kisaTarih=t=>{const d=new Date(t+'T00:00');return d.getDate()+'.'+(d.getMonth()+1)};
@@ -296,6 +366,21 @@ function isEmriUret(tarih){
   return out;
 }
 
+function gecikenIsler(bugunTarih, gunGeri){
+  const out=[];
+  for(let i=1;i<=gunGeri;i++){
+    const d=new Date(bugunTarih+'T00:00'); d.setDate(d.getDate()-i);
+    const tarih=d.toISOString().slice(0,10);
+    const done=isemri[tarih]||{};
+    isEmriUret(tarih).forEach(x=>{
+      x.gorevler.forEach(k=>{
+        if(!done[x.t.id+':'+k]) out.push({...x, gorev:k, tarih});
+      });
+    });
+  }
+  return out;
+}
+
 /* ================= gezinme ================= */
 document.querySelector('nav').onclick=e=>{
   const b=e.target.closest('[data-v]'); if(!b) return;
@@ -303,25 +388,45 @@ document.querySelector('nav').onclick=e=>{
 };
 function ciz(){
   document.querySelectorAll('nav [data-v]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.v===gorunum));
-  document.getElementById('fab').style.display=gorunum==='tanklar'?'':'none';
+  document.getElementById('fab').style.display=(gorunum==='tanklar'&&yonetici)?'':'none';
   if(gorunum==='tanklar') cizTanklar();
   else if(gorunum==='isemri') cizIsEmri();
   else cizProgram();
 }
 
 /* ---------- tanklar ---------- */
+function toplamKg(){
+  let kg=0;
+  tanklar.forEach(t=>{
+    if(t.bosaltildi||!t.kapasite) return;
+    const m=t.kapasite.match(/([\d.,]+)\s*(kg|t)?/i);
+    if(!m) return;
+    let v=+m[1].replace(/[.,](?=\d{3}\b)/g,'').replace(',','.');
+    if(isNaN(v)) return;
+    if(m[2]&&m[2].toLowerCase()==='t') v*=1000;
+    kg+=v;
+  });
+  return Math.round(kg);
+}
 function cizTanklar(){
   const say={hepsi:0,hazir:0,yakin:0,gecti:0,bosaltildi:0};
   tanklar.forEach(t=>{
     if(t.bosaltildi){say.bosaltildi++;return;}
     say.hepsi++; const d=durum(t); if(say[d]!==undefined) say[d]++;
   });
+  const kgToplam=toplamKg();
   document.getElementById('hdr').innerHTML=`
-    <div class="top"><h1>Tanklar</h1><button class="icon" id="btnYedek">Yedek</button></div>
+    <div class="top"><h1>Tanklar</h1>${yonetici?'<button class="icon" id="btnQR">QR</button><button class="icon" id="btnHizli">Hızlı Ekle</button><button class="icon" id="btnYedek">Yedek</button>':''}<button class="icon" id="btnKilit">${yonetici?'🔓':'🔒'}</button></div>
     <input id="ara" placeholder="Tank ara: A-14, biber…" value="${arama}" autocomplete="off">
     <div class="chips">${[['hepsi','Aktif'],['hazir','Hazır'],['yakin','Yaklaşan'],['gecti','Geçen'],['bosaltildi','Boşaltılan']]
-      .map(([k,ad])=>`<button class="chip" data-f="${k}" aria-pressed="${filtre===k}">${ad}<b>${say[k]||0}</b></button>`).join('')}</div>`;
-  document.getElementById('btnYedek').onclick=yedek;
+      .map(([k,ad])=>`<button class="chip" data-f="${k}" aria-pressed="${filtre===k}">${ad}<b>${say[k]||0}</b></button>`).join('')}
+    ${kgToplam?`<p class="hint" style="margin:8px 0 0">Fermantasyonda toplam ~${kgToplam.toLocaleString('tr-TR')} kg</p>`:''}`;
+  document.getElementById('btnKilit').onclick=yoneticiGirisi;
+  if(yonetici){
+    document.getElementById('btnYedek').onclick=yedek;
+    document.getElementById('btnHizli').onclick=hizliEkle;
+    document.getElementById('btnQR').onclick=qrOlustur;
+  }
   document.getElementById('ara').oninput=e=>{arama=e.target.value;cizTanklar();};
   document.getElementById('hdr').querySelector('.chips').onclick=e=>{
     const b=e.target.closest('.chip'); if(b){filtre=b.dataset.f;cizTanklar();}
@@ -375,7 +480,7 @@ function cizIsEmri(){
   const tuzToplam=liste.reduce((n,x)=>n+(x.tuzKg||0),0);
 
   document.getElementById('hdr').innerHTML=`
-    <div class="top"><h1>İş Emri</h1><button class="icon" id="btnPay">Paylaş</button></div>
+    <div class="top"><h1>İş Emri</h1><button class="icon" id="btnRapor">Rapor</button><button class="icon" id="btnPay">Paylaş</button><button class="icon" id="btnKilit">${yonetici?'🔓':'🔒'}</button></div>
     <div class="iebar">
       <button class="icon" id="dG">‹</button>
       <input type="date" id="ieT" value="${ieTarih}">
@@ -385,18 +490,33 @@ function cizIsEmri(){
   document.getElementById('dG').onclick=()=>{const d=new Date(ieTarih+'T00:00');d.setDate(d.getDate()-1);ieTarih=d.toISOString().slice(0,10);cizIsEmri();};
   document.getElementById('dI').onclick=()=>{const d=new Date(ieTarih+'T00:00');d.setDate(d.getDate()+1);ieTarih=d.toISOString().slice(0,10);cizIsEmri();};
   document.getElementById('btnPay').onclick=()=>paylas(liste);
+  document.getElementById('btnRapor').onclick=()=>gunSonuRaporu(liste,done);
+  document.getElementById('btnKilit').onclick=yoneticiGirisi;
 
   const e=document.getElementById('ekran');
   if(!liste.length){
     e.innerHTML=`<div class="empty"><b>Bu tarihte iş yok</b>${tanklar.some(t=>!t.bosaltildi)?'Programda bu güne görev tanımlı değil.':'Önce Tanklar sekmesinden dolum kaydı aç.'}</div>`;
     return;
   }
+  const gecikenler=(ieTarih===bugunISO())?gecikenIsler(ieTarih,3):[];
   e.innerHTML=`
     <div class="ozet">
       <div><span>Görev</span><b>${bitti}/${toplamGorev}</b></div>
       <div><span>Tank</span><b>${liste.length}</b></div>
       <div><span>Tuz</span><b>${tuzToplam?tuzToplam+' kg':'—'}</b></div>
     </div>
+    ${gecikenler.length?`
+    <div class="grup gec">
+      <h3 style="color:var(--alarm)">Dünden Kalan<small>${gecikenler.length} görev</small></h3>
+      ${gecikenler.map(x=>{
+        const key=x.t.id+':'+x.gorev;
+        return `<button class="gorev" data-key="${key}" data-tarih="${x.tarih}" style="border-color:#6A2C25">
+          <span class="cb"></span>
+          <span class="gk">${x.t.kod}</span>
+          <span class="gd"><b>${GOREV[x.gorev]}</b> · ${kisaTarih(x.tarih)} (${x.g}. gün)${x.gorev==='T'&&x.tuzKg?` · <b>${x.tuzKg} kg</b>`:''}</span>
+        </button>`;
+      }).join('')}
+    </div>`:''}
     ${GOREV_SIRA.filter(k=>grup[k]).map(k=>`
       <div class="grup">
         <h3>${GOREV[k]}<small>${grup[k].length} tank${k==='T'?' · '+grup[k].reduce((n,x)=>n+(x.tuzKg||0),0)+' kg':''}</small></h3>
@@ -405,15 +525,17 @@ function cizIsEmri(){
           return `<button class="gorev ${ok?'ok':''}" data-key="${key}">
             <span class="cb"></span>
             <span class="gk">${x.t.kod}</span>
-            <span class="gd"><b>${x.g}. gün</b> · ${x.t.urun||''}${k==='T'&&x.tuzKg?` · <b>${x.tuzKg} kg</b>`:''}</span>
+            <span class="gd"><b>${x.g}. gün</b> · ${x.t.urun||''}${k==='T'&&x.tuzKg?` · <b>${x.tuzKg} kg</b>`:''}${ok&&done[key]&&done[key].k?`<span class="n">✓ ${done[key].k} · ${done[key].s||''}</span>`:''}</span>
           </button>`;
         }).join('')}
       </div>`).join('')}`;
   e.onclick=async ev=>{
     const g=ev.target.closest('.gorev'); if(!g) return;
-    const d=isemri[ieTarih]=isemri[ieTarih]||{};
-    d[g.dataset.key]=!d[g.dataset.key];
-    if(!d[g.dataset.key]) delete d[g.dataset.key];
+    if(!yonetici){ toast('Sadece yönetici işaretleyebilir'); return; }
+    const hedefTarih=g.dataset.tarih||ieTarih;
+    const d=isemri[hedefTarih]=isemri[hedefTarih]||{};
+    if(d[g.dataset.key]) delete d[g.dataset.key];
+    else d[g.dataset.key]={k:kullaniciAdi(), s:saatSimdi()+(g.dataset.tarih?' (geç)':'')};
     Object.keys(isemri).forEach(t=>{ if(gunFark(t,bugunISO())>60) delete isemri[t]; });
     await sSet(K_IS,isemri); cizIsEmri();
   };
@@ -433,17 +555,39 @@ function paylas(liste){
   else if(navigator.clipboard){ navigator.clipboard.writeText(m).then(()=>toast('Panoya kopyalandı')); }
 }
 
+function gunSonuRaporu(liste,done){
+  if(!liste.length){ toast('Bu tarihte iş yok'); return; }
+  const tar=new Date(ieTarih+'T00:00').toLocaleDateString('tr-TR',{day:'numeric',month:'long'});
+  const yapilan=[], yapilmayan=[];
+  liste.forEach(x=>x.gorevler.forEach(k=>{
+    const key=x.t.id+':'+k;
+    const satir=`${x.t.kod} — ${GOREV[k]}${k==='T'&&x.tuzKg?' ('+x.tuzKg+' kg)':''}`;
+    const d=done[key];
+    if(d) yapilan.push(satir+(d.k?` ✓ ${d.k} ${d.s||''}`:' ✓'));
+    else yapilmayan.push(satir);
+  }));
+  let m=`GÜN SONU RAPORU · ${tar}\n`;
+  m+=`Tamamlanan: ${yapilan.length} / ${yapilan.length+yapilmayan.length}\n`;
+  if(yapilan.length){ m+=`\nYAPILAN:\n`; yapilan.forEach(s=>m+='  '+s+'\n'); }
+  if(yapilmayan.length){ m+=`\nYAPILMAYAN:\n`; yapilmayan.forEach(s=>m+='  '+s+'\n'); }
+  if(navigator.share){ navigator.share({text:m}).catch(()=>{}); }
+  else if(navigator.clipboard){ navigator.clipboard.writeText(m).then(()=>toast('Rapor panoya kopyalandı')); }
+}
+
 /* ---------- program ---------- */
 function cizProgram(){
   const us=urunler();
   if(!progUrun||!us.includes(progUrun)) progUrun=us[0];
   document.getElementById('hdr').innerHTML=`
-    <div class="top"><h1>Program</h1><button class="icon" id="pSifirla">Varsayılan</button></div>
+    <div class="top"><h1>Program</h1>${yonetici?'<button class="icon" id="pSifirla">Varsayılan</button>':''}<button class="icon" id="btnKilit">${yonetici?'🔓':'🔒'}</button></div>
     <div class="chips">${us.map(u=>`<button class="chip" data-u="${u}" aria-pressed="${progUrun===u}">${u}</button>`).join('')}</div>`;
-  document.getElementById('pSifirla').onclick=async()=>{
-    if(!confirm('Tüm program varsayılana (Excel şablonu) dönsün mü?')) return;
-    program=varsayilanProgram(); await sSet(K_PROG,program); cizProgram(); toast('Sıfırlandı');
-  };
+  if(yonetici){
+    document.getElementById('pSifirla').onclick=async()=>{
+      if(!confirm('Tüm program varsayılana (Excel şablonu) dönsün mü?')) return;
+      program=varsayilanProgram(); await sSet(K_PROG,program); cizProgram(); toast('Sıfırlandı');
+    };
+  }
+  document.getElementById('btnKilit').onclick=yoneticiGirisi;
   document.getElementById('hdr').querySelector('.chips').onclick=e=>{
     const b=e.target.closest('.chip'); if(b){progUrun=b.dataset.u;cizProgram();}
   };
@@ -456,12 +600,13 @@ function cizProgram(){
     return `<button class="prow" data-d="${d}">
       <span class="pd">${d}</span>
       <span class="pt"><b>${ad}</b>${tuz?`<br>${tuz} kg`:''}</span>
-      <span class="pe icon">Düzenle</span>
+      ${yonetici?'<span class="pe icon">Düzenle</span>':''}
     </button>`;
   }).join(''):'<div class="empty"><b>Program boş</b>Bu ürüne gün ekle.</div>')+
-  `<button class="btn ghost" id="gunEkle">+ Gün ekle</button>
-   <p class="hint">Seri harfi = tank kodunun ilk harfi (A–E). Tuz kg değerleri seriye göre uygulanır.</p>`;
+  (yonetici?`<button class="btn ghost" id="gunEkle">+ Gün ekle</button>`:'')+
+  `<p class="hint">Seri harfi = tank kodunun ilk harfi (A–E). Tuz kg değerleri seriye göre uygulanır.</p>`;
   document.getElementById('ekran').onclick=e=>{
+    if(!yonetici) return;
     if(e.target.closest('#gunEkle')){
       const d=prompt('Kaçıncı gün?');
       if(d&&+d>0){ programGun(+d); }
@@ -596,7 +741,7 @@ function detay(id){
       <div><span>Dolum</span><b>${kisaTarih(t.baslangic)}</b></div>
     </div>
     ${t.notlar?`<p class="hint">${t.notlar}</p>`:''}
-    ${t.bosaltildi?'':`
+    ${t.bosaltildi?'':(yonetici?`
       <h3>Ölçüm ekle</h3>
       <div class="two">
         <div><label>pH</label><input type="number" step="0.01" id="o_ph" inputmode="decimal"></div>
@@ -604,20 +749,22 @@ function detay(id){
         <div><label>°C</label><input type="number" step="0.1" id="o_sic" inputmode="decimal"></div>
       </div>
       <input id="o_not" placeholder="Köpük, koku, tuz takviyesi…" style="margin-top:10px">
-      <button class="btn" id="o_kaydet">Ölçümü kaydet</button>`}
+      <button class="btn" id="o_kaydet">Ölçümü kaydet</button>`:'')}
     <h3>Ölçüm geçmişi</h3>
     ${(t.olcumler||[]).length?t.olcumler.map(o=>`
       <div class="log"><span class="d">${kisaTarih(o.tarih)}</span>
       <span class="v">pH ${o.ph||'—'} <em>·</em> Tuz ${o.tuz||'—'}${o.tuz?'%':''} <em>·</em> ${o.sicaklik||'—'}${o.sicaklik?'°':''}
       ${o.not?`<span class="n">${o.not}</span>`:''}</span></div>`).join(''):'<p class="hint">Henüz ölçüm girilmedi.</p>'}
+    ${yonetici?`
     <h3>İşlemler</h3>
     <button class="btn ghost" id="duzenle">Tankı düzenle</button>
     ${t.bosaltildi
       ?`<button class="btn ghost" id="geriac">Boşaltmayı geri al</button><p class="hint">Boşaltma: ${kisaTarih(t.bosaltildi)}</p>`
       :`<button class="btn" id="bosalt">Tankı boşalt</button>`}
-    <button class="btn danger" id="sil">Tankı sil</button>
+    <button class="btn danger" id="sil">Tankı sil</button>`:''}
   `);
   const q=s=>p.querySelector(s);
+  if(!yonetici) return;
   if(!t.bosaltildi){
     q('#o_kaydet').onclick=async()=>{
       const o={tarih:bugunISO(),ph:q('#o_ph').value,tuz:q('#o_tuz').value,sicaklik:q('#o_sic').value,not:q('#o_not').value.trim()};
@@ -633,6 +780,266 @@ function detay(id){
   q('#sil').onclick=async()=>{
     if(!confirm(t.kod+' ve tüm ölçümleri silinsin mi?')) return;
     tanklar=tanklar.filter(x=>x.id!==id); await sSet(K_TANK,tanklar); kapat(); ciz();
+  };
+}
+
+/* ================= hızlı ekle (serbest metin, çoklu eylem) ================= */
+const URUN_DESENLERI=[
+  {re:/salatal[ıi]k[^0-9]{0,10}no\s*:?\s*1\b|no\s*:?\s*1[^a-z]{0,3}salatal[ıi]k/i, urun:'Salatalık No.1'},
+  {re:/salatal[ıi]k[^0-9]{0,10}no\s*:?\s*2\b|no\s*:?\s*2[^a-z]{0,3}salatal[ıi]k/i, urun:'Salatalık No.2'},
+  {re:/salatal[ıi]k[^0-9]{0,10}no\s*:?\s*3\b|no\s*:?\s*3[^a-z]{0,3}salatal[ıi]k/i, urun:'Salatalık No.3'},
+  {re:/salatal[ıi]k/i, urun:'Salatalık No.1'},
+  {re:/domates/i, urun:'Domates'},
+  {re:/lahana/i, urun:'Lahana'},
+  {re:/kelek/i, urun:'Kelek'},
+  {re:/havu[cç]/i, urun:'Havuç'},
+  {re:/[şs]eftali/i, urun:'Şeftali Çağlası'},
+  {re:/acur/i, urun:'Acur'},
+  {re:/[cç]orbac[ıi]|\bbiber\b/i, urun:'Çorbacı Biber'},
+  {re:/erik/i, urun:'Erik Turşusu'}
+];
+function hedefGunHesapla(urun){
+  const up=program[urun];
+  if(!up) return 30;
+  const gunler=Object.keys(up).map(Number);
+  return gunler.length? Math.max(...gunler)+3 : 30;
+}
+function kodBul(s){
+  let m=s.match(/^([^\s]+)\s+nolu\s+tank/i);
+  if(m) return m[1].toUpperCase();
+  m=s.match(/([A-ZÇĞİÖŞÜ]{1,3}-?\d{1,4})/i);
+  return m? m[1].toUpperCase() : null;
+}
+function satirAyristir(satir){
+  const s=satir.trim();
+  if(!s) return null;
+  const kod=kodBul(s);
+  if(!kod) return {hata:true, satir:s, neden:'Tank kodu bulunamadı'};
+
+  if(/bo[şs]alt/i.test(s)){
+    return {hata:false, eylem:'bosalt', kod, satir:s};
+  }
+  if(/devirdaim/i.test(s) && /yap|tamam|bitti/i.test(s)){
+    return {hata:false, eylem:'devirdaim', kod, satir:s};
+  }
+  const phM=s.match(/ph\s*:?\s*(\d+([.,]\d+)?)/i);
+  const tuzM=s.match(/tuz\s*:?\s*(\d+([.,]\d+)?)/i);
+  const sicM=s.match(/s[ıi]cakl[ıi]k\s*:?\s*(\d+([.,]\d+)?)/i);
+  if(phM||tuzM||sicM){
+    return {hata:false, eylem:'olcum', kod, satir:s,
+      ph: phM?phM[1].replace(',','.'):null,
+      tuz: tuzM?tuzM[1].replace(',','.'):null,
+      sicaklik: sicM?sicM[1].replace(',','.'):null};
+  }
+  const km=s.match(/(\d[\d.,]*)\s*kg/i);
+  const miktar=km? +km[1].replace(/[.,]/g,'') : null;
+  let urun=null;
+  for(const d of URUN_DESENLERI){ if(d.re.test(s)){ urun=d.urun; break; } }
+  if(!urun) return {hata:true, satir:s, neden:'Ürün anlaşılamadı'};
+  return {hata:false, eylem:'dolum', kod, urun, miktar, satir:s};
+}
+function hizliOnizleGoster(p, satirlarMetin){
+  const q=s=>p.querySelector(s);
+  const satirlar=satirlarMetin.split('\n').map(satirAyristir).filter(Boolean);
+  const gecerli=satirlar.filter(x=>!x.hata);
+  const hatali=satirlar.filter(x=>x.hata);
+  if(!satirlar.length){ toast('Metin boş'); return; }
+  const ETIK={dolum:'Dolum',bosalt:'Boşaltma',devirdaim:'Devirdaim tamam',olcum:'Ölçüm'};
+  q('#hz_sonuc').innerHTML=`
+    ${gecerli.length?`<h3>Uygulanacak (${gecerli.length})</h3>`+gecerli.map(x=>{
+      let detay='';
+      if(x.eylem==='dolum') detay=`${x.urun}${x.miktar?` · <em>${x.miktar} kg</em>`:' · <span class="n">kilo yok</span>'}`;
+      else if(x.eylem==='olcum') detay=[x.ph&&`pH ${x.ph}`,x.tuz&&`Tuz ${x.tuz}`,x.sicaklik&&`${x.sicaklik}°`].filter(Boolean).join(' · ');
+      else detay='';
+      return `<div class="log"><span class="d">${x.kod}</span>
+        <span class="v">${ETIK[x.eylem]}${detay?' · '+detay:''}</span></div>`;
+    }).join(''):''}
+    ${hatali.length?`<h3>Anlaşılamadı (${hatali.length})</h3>`+hatali.map(x=>`
+      <div class="log"><span class="d">—</span><span class="v"><span class="n">${x.satir} (${x.neden})</span></span></div>`).join(''):''}
+    ${gecerli.length?`<button class="btn" id="hz_uygula">${gecerli.length} işlemi uygula</button>`:''}
+  `;
+  const btn=q('#hz_uygula');
+  if(btn) btn.onclick=async()=>{
+    window.__hizliOnceki=JSON.parse(JSON.stringify(tanklar));
+    window.__hizliOncekiIs=JSON.parse(JSON.stringify(isemri));
+    let dolum=0, bosalt=0, olcum=0, devirdaim=0, bulunamadi=0;
+    const bugun=bugunISO();
+    gecerli.forEach(x=>{
+      const t=tanklar.find(tk=>tk.kod===x.kod&&!tk.bosaltildi);
+      if(x.eylem==='dolum'){
+        const veri={kod:x.kod, urun:x.urun, kapasite:x.miktar?(x.miktar+' kg'):'',
+          baslangic:bugun, hedefGun:hedefGunHesapla(x.urun), notlar:''};
+        if(t){ Object.assign(t,veri); }
+        else{ tanklar.push({id:'t'+Date.now()+'_'+Math.random().toString(36).slice(2,7),...veri,bosaltildi:'',olcumler:[]}); }
+        dolum++;
+      }else if(!t){
+        bulunamadi++;
+      }else if(x.eylem==='bosalt'){
+        t.bosaltildi=bugun; bosalt++;
+      }else if(x.eylem==='olcum'){
+        (t.olcumler=t.olcumler||[]).unshift({tarih:bugun, ph:x.ph||'', tuz:x.tuz||'', sicaklik:x.sicaklik||'', not:''});
+        olcum++;
+      }else if(x.eylem==='devirdaim'){
+        const g=gun(t); const up=program[t.urun]; const pr=up&&up[g];
+        const kodGorev=pr&&pr.g&&pr.g.find(k=>k==='D'||k==='D2'||k==='DV');
+        if(kodGorev){
+          const d=isemri[bugun]=isemri[bugun]||{};
+          d[t.id+':'+kodGorev]=true; devirdaim++;
+        }else{ bulunamadi++; }
+      }
+    });
+    await sSet(K_TANK,tanklar); await sSet(K_IS,isemri);
+    const ozet=[dolum&&`${dolum} dolum`,bosalt&&`${bosalt} boşaltma`,olcum&&`${olcum} ölçüm`,devirdaim&&`${devirdaim} devirdaim`,bulunamadi&&`${bulunamadi} eşleşmedi`].filter(Boolean).join(', ');
+    q('#hz_sonuc').innerHTML=`<p class="hint">${ozet||'İşlem yok'}</p><button class="btn ghost" id="hz_geriAl">Geri Al</button><button class="btn" id="hz_bitti">Tamam</button>`;
+    ciz();
+    q('#hz_geriAl').onclick=async()=>{
+      if(window.__hizliOnceki){ tanklar=window.__hizliOnceki; await sSet(K_TANK,tanklar); }
+      if(window.__hizliOncekiIs){ isemri=window.__hizliOncekiIs; await sSet(K_IS,isemri); }
+      kapat(); ciz(); toast('Geri alındı');
+    };
+    q('#hz_bitti').onclick=()=>{ kapat(); };
+  };
+}
+function sesliGirisDestek(){
+  return !!(window.SpeechRecognition||window.webkitSpeechRecognition);
+}
+function hizliEkle(){
+  const destekli=sesliGirisDestek();
+  const p=panel(`
+    <div class="pbar"><h2>Hızlı Ekle</h2><button class="icon" data-kapat>Kapat</button></div>
+    <p class="hint">Her satıra bir işlem yaz: dolum ("A-002 nolu tanka 11355 kg no2 salatalık dolduruldu"),
+    boşaltma ("A-3 boşaltıldı"), devirdaim ("A-5 devirdaim yapıldı") veya ölçüm ("A-2 pH 4.1 tuz 8").</p>
+    <div style="display:flex;gap:8px;align-items:flex-start">
+      <textarea id="hz_metin" style="min-height:160px;font-family:ui-monospace,monospace;font-size:13.5px;flex:1" placeholder="A-002 nolu tanka 11355 kg no2 salatalık dolduruldu."></textarea>
+      ${destekli?'<button class="icon" id="hz_mic" style="flex:0 0 auto;padding:12px 14px">🎤</button>':''}
+    </div>
+    <button class="btn" id="hz_onizle">Önizle</button>
+    <div id="hz_sonuc"></div>
+  `);
+  const q=s=>p.querySelector(s);
+  q('#hz_onizle').onclick=()=>hizliOnizleGoster(p, q('#hz_metin').value);
+  if(destekli){
+    const Rec=window.SpeechRecognition||window.webkitSpeechRecognition;
+    const rec=new Rec();
+    rec.lang='tr-TR'; rec.interimResults=false; rec.continuous=false;
+    let dinliyor=false;
+    q('#hz_mic').onclick=()=>{
+      if(dinliyor){ rec.stop(); return; }
+      try{ rec.start(); dinliyor=true; q('#hz_mic').style.color='var(--amber)'; }
+      catch(e){ toast('Mikrofon başlatılamadı'); }
+    };
+    rec.onresult=(e)=>{
+      const metin=Array.from(e.results).map(r=>r[0].transcript).join(' ');
+      const ta=q('#hz_metin');
+      ta.value=(ta.value.trim()+'\n'+metin).trim();
+    };
+    rec.onend=()=>{ dinliyor=false; q('#hz_mic').style.color=''; };
+    rec.onerror=()=>{ dinliyor=false; q('#hz_mic').style.color=''; toast('Sesli giriş hatası'); };
+  }
+}
+
+/* ================= QR kod ================= */
+function tabanURL(){
+  return location.origin + location.pathname;
+}
+function qrOlustur(){
+  const aktifTanklar=tanklar.filter(t=>!t.bosaltildi).sort((a,b)=>a.kod.localeCompare(b.kod,'tr',{numeric:true}));
+  const p=panel(`
+    <div class="pbar"><h2>QR Kodları</h2><button class="icon" data-kapat>Kapat</button></div>
+    <p class="hint">Tank başına bir QR üretilir. Yapıştırdıktan sonra QR'ı okutan kişi doğrudan o tankın bugünkü işini görür ve onaylar.</p>
+    <div class="seg"><button id="qm1" aria-pressed="true">Aralık seç</button><button id="qm2" aria-pressed="false">Tüm aktif tanklar (${aktifTanklar.length})</button></div>
+    <div id="qAralik">
+      <div class="two">
+        <div><label>Seri</label><input id="q_seri" placeholder="A" autocapitalize="characters"></div>
+        <div><label>İlk no</label><input type="number" id="q_bas" value="1"></div>
+        <div><label>Son no</label><input type="number" id="q_son" value="20"></div>
+      </div>
+    </div>
+    <button class="btn" id="q_uret">QR'ları Oluştur</button>
+    <div id="qSonuc"></div>
+  `);
+  const q=s=>p.querySelector(s);
+  let mod='aralik';
+  q('#qm1').onclick=()=>{mod='aralik';q('#qm1').setAttribute('aria-pressed','true');q('#qm2').setAttribute('aria-pressed','false');q('#qAralik').style.display='';};
+  q('#qm2').onclick=()=>{mod='tumu';q('#qm2').setAttribute('aria-pressed','true');q('#qm1').setAttribute('aria-pressed','false');q('#qAralik').style.display='none';};
+  q('#q_uret').onclick=()=>{
+    let liste;
+    if(mod==='tumu'){ liste=aktifTanklar; }
+    else{
+      const sr=q('#q_seri').value.trim().toUpperCase();
+      const b=+q('#q_bas').value, s=+q('#q_son').value;
+      if(!sr||!(s>=b)){ toast('Seri ve numaraları kontrol et'); return; }
+      liste=[];
+      for(let i=b;i<=s;i++){ liste.push({kod:sr+'-'+i}); }
+    }
+    if(!liste.length){ toast('Liste boş'); return; }
+    q('#qSonuc').innerHTML=`
+      <p class="hint">${liste.length} adet QR. Aşağıdan yazdırabilirsin.</p>
+      <button class="btn" id="q_yazdir">Yazdır</button>
+      <div id="qrYazdirAlani">${liste.map(t=>`
+        <div class="qrKart"><div class="qrKutu" id="qr_${t.kod.replace(/[^A-Z0-9]/g,'_')}"></div><div class="qrEtiket">${t.kod}</div></div>
+      `).join('')}</div>
+    `;
+    liste.forEach(t=>{
+      const el=q('#qr_'+t.kod.replace(/[^A-Z0-9]/g,'_'));
+      if(el && window.QRCode){
+        new QRCode(el,{text:tabanURL()+'?tank='+encodeURIComponent(t.kod), width:110, height:110});
+      }
+    });
+    q('#q_yazdir').onclick=()=>window.print();
+  };
+}
+
+/* ================= QR ile açılan tank ekranı ================= */
+function cizTankIsEmri(kod){
+  qrGoruntuKod=kod;
+  document.querySelector('nav').style.display='none';
+  document.getElementById('fab').style.display='none';
+  const t=tanklar.find(x=>x.kod===kod && !x.bosaltildi);
+  document.getElementById('hdr').innerHTML=`
+    <div class="top"><h1>${kod}</h1><a class="icon" href="${tabanURL()}" style="text-decoration:none">Tüm Tanklar</a></div>`;
+  const e=document.getElementById('ekran');
+  if(!t){
+    e.innerHTML=`<div class="empty"><b>Tank bulunamadı</b>Bu kod aktif tanklarda yok ya da boşaltılmış olabilir.</div>`;
+    return;
+  }
+  const g=gun(t), d=durum(t);
+  const up=program[t.urun]||{};
+  const bugun=bugunISO();
+  const bugunProg=up[g];
+  const done=isemri[bugun]||{};
+  e.innerHTML=`
+    <div class="card" style="align-items:flex-start">
+      <div class="info">
+        <div class="row1"><span class="kod">${t.kod}</span><span class="kap">${t.kapasite||''}</span></div>
+        <div class="urun">${t.urun||'—'}</div>
+        <div class="meta">
+          <span class="pill ${SINIF[d]}">${ETIKET[d]}</span>
+          <span class="pill">${g}/${t.hedefGun} gün</span>
+        </div>
+      </div>
+    </div>
+    ${(!bugunProg||!bugunProg.g.length)?`<div class="empty"><b>Bugün görev yok</b>Bu tank için bugüne tanımlı bir iş bulunmuyor.</div>`:`
+    <div class="grup">
+      <h3>Bugünün İşi</h3>
+      ${bugunProg.g.map(k=>{
+        const key=t.id+':'+k, ok=!!done[key];
+        const tuzKg=k==='T'?(bugunProg.tuz&&bugunProg.tuz[seri(t)]):null;
+        return `<button class="gorev ${ok?'ok':''}" data-key="${key}">
+          <span class="cb"></span>
+          <span class="gd" style="font-size:16px"><b>${GOREV[k]}</b>${tuzKg?` · ${tuzKg} kg`:''}${ok&&done[key]&&done[key].k?`<span class="n">✓ ${done[key].k} · ${done[key].s||''}</span>`:''}</span>
+        </button>`;
+      }).join('')}
+    </div>`}
+  `;
+  e.onclick=async ev=>{
+    const b=ev.target.closest('.gorev'); if(!b) return;
+    const d2=isemri[bugun]=isemri[bugun]||{};
+    if(d2[b.dataset.key]) delete d2[b.dataset.key];
+    else d2[b.dataset.key]={k:kullaniciAdi(), s:saatSimdi()};
+    await sSet(K_IS,isemri);
+    cizTankIsEmri(kod);
+    toast('Kaydedildi');
   };
 }
 
@@ -686,7 +1093,10 @@ function yedek(){
   /* eski sürümden gelen ürün adlarını eşle */
   const esle={'Salatalık No.1':'Salatalık No.1'};
   tanklar.forEach(t=>{ if(t.urun&&!program[t.urun]){ const k=Object.keys(program).find(u=>u.toLocaleLowerCase('tr')===t.urun.toLocaleLowerCase('tr')); if(k) t.urun=k; } });
-  ciz();
+  const qsTank=new URLSearchParams(location.search).get('tank');
+  if(qsTank){ cizTankIsEmri(qsTank.toUpperCase()); }
+  else{ ciz(); }
+  canliSenkronBaslat();
 })();
 </script>
 <script>
