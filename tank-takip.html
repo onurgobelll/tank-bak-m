@@ -144,6 +144,12 @@ textarea{min-height:110px;resize:vertical;font-family:ui-monospace,monospace;fon
   background:var(--ink);color:#141B22;padding:11px 18px;border-radius:999px;font-family:var(--cond);
   font-size:16px;letter-spacing:.06em;text-transform:uppercase;font-weight:600}
 @media(prefers-reduced-motion:reduce){*{animation:none!important}}
+.onayOverlay{position:fixed;inset:0;z-index:70;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:20px}
+.onayKutu{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:20px;max-width:320px;width:100%}
+.onayKutu .ob{font-family:var(--cond);font-size:20px;font-weight:700;letter-spacing:.03em;margin:0 0 6px}
+.onayKutu .od{color:var(--muted);font-size:14px;margin:0 0 16px;white-space:pre-line}
+.onayKutu .two{gap:10px}
+.onayKutu .btn{margin-top:0}
 #qrYazdirAlani{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-top:14px}
 .qrKart{border:1px solid var(--line);border-radius:12px;padding:10px;text-align:center;background:#fff}
 .qrKutu{display:flex;justify-content:center;margin-bottom:6px}
@@ -350,6 +356,27 @@ const SINIF={devam:'on-time',yakin:'soon',hazir:'ready',gecti:'late',bosaltildi:
 function toast(m){const d=document.createElement('div');d.className='toast';d.textContent=m;
   document.body.appendChild(d);setTimeout(()=>d.remove(),1700);}
 
+function onayDialog(baslik, detay, evetMetin){
+  return new Promise(resolve=>{
+    const ov=document.createElement('div');
+    ov.className='onayOverlay';
+    ov.innerHTML=`
+      <div class="onayKutu">
+        <p class="ob">${baslik}</p>
+        ${detay?`<p class="od">${detay}</p>`:''}
+        <div class="two">
+          <button class="btn ghost" id="onIptal">İptal</button>
+          <button class="btn" id="onEvet">${evetMetin}</button>
+        </div>
+      </div>`;
+    document.body.appendChild(ov);
+    const bitir=(sonuc)=>{ ov.remove(); resolve(sonuc); };
+    ov.querySelector('#onIptal').onclick=()=>bitir(false);
+    ov.querySelector('#onEvet').onclick=()=>bitir(true);
+    ov.onclick=e=>{ if(e.target===ov) bitir(false); };
+  });
+}
+
 function isEmriUret(tarih){
   const out=[];
   tanklar.forEach(t=>{
@@ -534,7 +561,13 @@ function cizIsEmri(){
     if(!yonetici){ toast('Sadece yönetici işaretleyebilir'); return; }
     const hedefTarih=g.dataset.tarih||ieTarih;
     const d=isemri[hedefTarih]=isemri[hedefTarih]||{};
-    if(d[g.dataset.key]) delete d[g.dataset.key];
+    const yapildiMi=!!d[g.dataset.key];
+    const baslik=(g.querySelector('.gk')?.textContent||'')+' — '+(g.querySelector('.gd b')?.textContent||'');
+    const onay=yapildiMi
+      ? await onayDialog(baslik, 'Bu görevin onayını geri almak istiyor musun?', 'Geri Al')
+      : await onayDialog(baslik, 'Bu görev yapıldı mı?', 'Onayla');
+    if(!onay) return;
+    if(yapildiMi) delete d[g.dataset.key];
     else d[g.dataset.key]={k:kullaniciAdi(), s:saatSimdi()+(g.dataset.tarih?' (geç)':'')};
     Object.keys(isemri).forEach(t=>{ if(gunFark(t,bugunISO())>60) delete isemri[t]; });
     await sSet(K_IS,isemri); cizIsEmri();
@@ -1035,7 +1068,13 @@ function cizTankIsEmri(kod){
   e.onclick=async ev=>{
     const b=ev.target.closest('.gorev'); if(!b) return;
     const d2=isemri[bugun]=isemri[bugun]||{};
-    if(d2[b.dataset.key]) delete d2[b.dataset.key];
+    const yapildiMi=!!d2[b.dataset.key];
+    const baslik=b.querySelector('.gd b')?.textContent||'';
+    const onay=yapildiMi
+      ? await onayDialog(baslik, 'Bu görevin onayını geri almak istiyor musun?', 'Geri Al')
+      : await onayDialog(baslik, 'Bu görev yapıldı mı?', 'Onayla');
+    if(!onay) return;
+    if(yapildiMi) delete d2[b.dataset.key];
     else d2[b.dataset.key]={k:kullaniciAdi(), s:saatSimdi()};
     await sSet(K_IS,isemri);
     cizTankIsEmri(kod);
