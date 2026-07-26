@@ -1,18 +1,32 @@
 {
-    "id": "tanktakip",
-        "name": "Tank Takip",
-        "short_name": "Tank Takip",
-        "description": "Tank fermantasyon ve bakim takip uygulamasi",
-        "start_url": "/tank-bak-m/tank-takip.html",
-        "scope": "/tank-bak-m/",
-        "display": "standalone",
-        "background_color": "#141B22",
-        "theme_color": "#141B22",
-        "orientation": "any",
-        "lang": "tr",
-        "dir": "ltr",
-        "icons": [
-      { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
-      { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
-        ]
+  "id": "tanktakip",
+  "name": "Tank Takip",
+  "short_name": "Tank Takip",
+  "description": "Tank fermantasyon ve bakim takip uygulamasi",
+  "start_url": "/tank-bak-m/tank-takip.html",
+  "scope": "/tank-bak-m/",
+  "display": "fullscreen",
+  "display_override": [
+    "fullscreen",
+    "standalone"
+  ],
+  "background_color": "#F4F7FB",
+  "theme_color": "#F4F7FB",
+  "orientation": "portrait",
+  "lang": "tr",
+  "dir": "ltr",
+  "icons": [
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
 }
