@@ -181,6 +181,13 @@ textarea{min-height:110px;resize:vertical;font-family:ui-monospace,monospace;fon
 .kamKutu{position:relative;width:100%;aspect-ratio:1;background:#0B1220;border-radius:16px;overflow:hidden;margin-top:8px}
 .kamKutu video{width:100%;height:100%;object-fit:cover}
 .kamCerceve{position:absolute;inset:14%;border:3px solid rgba(37,99,235,.9);border-radius:14px;box-shadow:0 0 0 100vmax rgba(0,0,0,.25)}
+.gorevChips{margin-top:7px}
+.gorevChips .chip[aria-pressed="true"]{background:linear-gradient(135deg,var(--yesil),var(--yesil2));border-color:transparent;color:#fff}
+.gorevChips .chip[aria-pressed="true"] b{color:#fff}
+.hepsiBtn{margin:0 0 14px}
+.tamamRozet{background:linear-gradient(135deg,var(--yesil),var(--yesil2));color:#fff;border-radius:13px;
+  padding:13px;text-align:center;font-family:var(--cond);font-size:17px;font-weight:700;letter-spacing:.06em;
+  margin-bottom:14px;box-shadow:var(--golge)}
 .tumuBtn{margin-left:10px;background:linear-gradient(135deg,var(--yesil),var(--yesil2));color:#fff;border:none;
   border-radius:999px;padding:4px 12px 3px;font-family:var(--cond);font-size:13.5px;font-weight:700;letter-spacing:.05em}
 .kimTags{margin-bottom:6px}
@@ -239,7 +246,7 @@ textarea{min-height:110px;resize:vertical;font-family:ui-monospace,monospace;fon
    Boş bırakılırsa uygulama sadece bu telefonda çalışır (eski davranış). */
 const FIREBASE_URL = 'https://tank-takip-default-rtdb.firebaseio.com';
 const K_TANK='tanktakip:tanklar', K_PROG='tanktakip:programv2', K_IS='tanktakip:isemri', K_VERI='tanktakip:veriYuklendi';
-let veriYuklendi=false, ozetAcik=false, ieUrun='hepsi';
+let veriYuklendi=false, ozetAcik=false, ieUrun='hepsi', ieGorev='hepsi';
 const ADMIN_PIN='2026';
 let yonetici=false;
 
@@ -614,12 +621,17 @@ function cizIsEmri(){
   if(ieUrun!=='hepsi' && !urunAdlari.includes(ieUrun)) ieUrun='hepsi';
   const liste = ieUrun==='hepsi' ? hepsiListe : hepsiListe.filter(x=>(x.t.urun||'—')===ieUrun);
   const done=isemri[ieTarih]||{};
-  const grup={};
-  liste.forEach(x=>x.gorevler.forEach(k=>{(grup[k]=grup[k]||[]).push(x);}));
-  const toplamGorev=liste.reduce((n,x)=>n+x.gorevler.length,0);
-  let bitti=0;
-  liste.forEach(x=>x.gorevler.forEach(k=>{ if(done[x.t.id+':'+k]) bitti++; }));
-  const tuzToplam=liste.reduce((n,x)=>n+(x.tuzKg||0),0);
+  const grupHepsi={};
+  liste.forEach(x=>x.gorevler.forEach(k=>{(grupHepsi[k]=grupHepsi[k]||[]).push(x);}));
+  const gorevTipleri=GOREV_SIRA.filter(k=>grupHepsi[k]);
+  if(ieGorev!=='hepsi' && !grupHepsi[ieGorev]) ieGorev='hepsi';
+  const grup = ieGorev==='hepsi' ? grupHepsi : {[ieGorev]:grupHepsi[ieGorev]};
+  let toplamGorev=0, bitti=0, tuzToplam=0;
+  Object.entries(grup).forEach(([k,arr])=>arr.forEach(x=>{
+    toplamGorev++;
+    if(done[x.t.id+':'+k]) bitti++;
+    if(k==='T') tuzToplam+=(x.tuzKg||0);
+  }));
 
   document.getElementById('hdr').innerHTML=`
     <div class="top"><h1>İş Emri</h1><button class="icon" id="btnOkut">Okut</button><button class="icon" id="btnRapor">Rapor</button><button class="icon" id="btnPay">Paylaş</button><button class="icon" id="btnKilit">${yonetici?'🔓':'🔒'}</button></div>
@@ -631,10 +643,19 @@ function cizIsEmri(){
     ${urunAdlari.length>1?`<div class="chips" id="ieChips">
       <button class="chip" data-u="hepsi" aria-pressed="${ieUrun==='hepsi'}">Tümü<b>${hepsiListe.length}</b></button>
       ${urunAdlari.map(u=>`<button class="chip" data-u="${u}" aria-pressed="${ieUrun===u}">${u}<b>${urunSay[u]}</b></button>`).join('')}
+    </div>`:''}
+    ${gorevTipleri.length>1?`<div class="chips gorevChips" id="ieGorevChips">
+      <button class="chip" data-g="hepsi" aria-pressed="${ieGorev==='hepsi'}">Tüm işler</button>
+      ${gorevTipleri.map(k=>`<button class="chip" data-g="${k}" aria-pressed="${ieGorev===k}">${GOREV[k]}<b>${grupHepsi[k].length}</b></button>`).join('')}
     </div>`:''}`;
   if(document.getElementById('ieChips')){
     document.getElementById('ieChips').onclick=e2=>{
       const b=e2.target.closest('.chip'); if(b){ ieUrun=b.dataset.u; cizIsEmri(); }
+    };
+  }
+  if(document.getElementById('ieGorevChips')){
+    document.getElementById('ieGorevChips').onclick=e2=>{
+      const b=e2.target.closest('.chip'); if(b){ ieGorev=b.dataset.g; cizIsEmri(); }
     };
   }
   document.getElementById('ieT').onchange=e=>{ieTarih=e.target.value||bugunISO();cizIsEmri();};
@@ -657,6 +678,7 @@ function cizIsEmri(){
       <div><span>Tank</span><b>${liste.length}</b></div>
       <div><span>Tuz</span><b>${tuzToplam?tuzToplam+' kg':'—'}</b></div>
     </div>
+    ${bitti<toplamGorev?`<button class="btn hepsiBtn" id="hepsiOnay">Tümünü Onayla · ${toplamGorev-bitti} görev${ieUrun!=='hepsi'?' ('+ieUrun+')':''}</button>`:`<div class="tamamRozet">✓ Bugünün işleri tamam${ieUrun!=='hepsi'?' — '+ieUrun:''}</div>`}
     ${gecikenler.length?`
     <div class="grup gec">
       <h3 style="color:var(--alarm)">Dünden Kalan<small>${gecikenler.length} görev</small></h3>
@@ -682,6 +704,22 @@ function cizIsEmri(){
         }).join('')}
       </div>`).join('')}`;
   e.onclick=async ev=>{
+    if(ev.target.closest('#hepsiOnay')){
+      const kalan=[];
+      liste.forEach(x=>x.gorevler.forEach(k=>{ if(!done[x.t.id+':'+k]) kalan.push({x,k}); }));
+      if(!kalan.length){ toast('Zaten hepsi onaylı'); return; }
+      const tuzK=kalan.filter(o=>o.k==='T').reduce((n,o)=>n+(o.x.tuzKg||0),0);
+      const onay=await onayDialog('Tümünü Onayla',
+        kalan.length+' görev onaylanacak'+(ieUrun!=='hepsi'?' ('+ieUrun+')':'')+'.'+(tuzK?'\nToplam '+tuzK+' kg tuz.':''),
+        'Hepsini Onayla');
+      if(!onay) return;
+      const d=isemri[ieTarih]=isemri[ieTarih]||{};
+      const ad=kullaniciAdi(), sa=saatSimdi();
+      kalan.forEach(o=>{ d[o.x.t.id+':'+o.k]={k:ad, s:sa}; });
+      await sSet(K_IS,isemri); cizIsEmri();
+      toast(kalan.length+' görev onaylandı');
+      return;
+    }
     const tb=ev.target.closest('.tumuBtn');
     if(tb){
       const k=tb.dataset.g;
