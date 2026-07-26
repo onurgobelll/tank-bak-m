@@ -126,7 +126,7 @@ main{padding:8px 16px 0}
 
 nav{position:fixed;left:0;right:0;bottom:0;z-index:30;background:rgba(255,255,255,.94);backdrop-filter:blur(14px);border-top:1px solid var(--line);box-shadow:0 -2px 14px rgba(19,32,51,.05);
   display:flex;padding:6px 8px calc(6px + env(safe-area-inset-bottom));gap:6px}
-nav button{flex:1;background:none;border:none;padding:9px 4px 8px;font-family:var(--cond);font-size:15.5px;
+nav button{flex:1;background:none;border:none;padding:9px 2px 8px;font-family:var(--cond);font-size:14px;
   letter-spacing:.08em;text-transform:uppercase;color:var(--muted);border-radius:12px}
 nav button b{display:block;font-size:21px;line-height:1;margin-bottom:3px;font-weight:400}
 nav button[aria-pressed="true"]{color:var(--mavi2);background:rgba(59,130,246,.15)}
@@ -181,6 +181,7 @@ textarea{min-height:110px;resize:vertical;font-family:ui-monospace,monospace;fon
 .kamKutu{position:relative;width:100%;aspect-ratio:1;background:#0B1220;border-radius:16px;overflow:hidden;margin-top:8px}
 .kamKutu video{width:100%;height:100%;object-fit:cover}
 .kamCerceve{position:absolute;inset:14%;border:3px solid rgba(37,99,235,.9);border-radius:14px;box-shadow:0 0 0 100vmax rgba(0,0,0,.25)}
+.raporListe{margin-top:6px}
 .gorevChips{margin-top:7px}
 .gorevChips .chip[aria-pressed="true"]{background:linear-gradient(135deg,var(--yesil),var(--yesil2));border-color:transparent;color:#fff}
 .gorevChips .chip[aria-pressed="true"] b{color:#fff}
@@ -201,30 +202,10 @@ textarea{min-height:110px;resize:vertical;font-family:ui-monospace,monospace;fon
 .kgrozet{display:inline-block;margin-left:8px;background:linear-gradient(135deg,var(--mavi),var(--mavi2));color:#fff;
   font-family:var(--cond);font-size:15px;font-weight:700;padding:3px 10px 2px;border-radius:999px;vertical-align:middle}
 #qrYazdirAlani{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-top:14px}
-@media print{
-  @page{margin:8mm}
-  #qrYazdirAlani{gap:5mm}
-  #qrYazdirAlani.yz2{grid-template-columns:repeat(2,1fr)}
-  #qrYazdirAlani.yz3{grid-template-columns:repeat(3,1fr)}
-  #qrYazdirAlani.yz4{grid-template-columns:repeat(4,1fr)}
-  .yz2 .qrKutu canvas,.yz2 .qrKutu img{width:42mm!important;height:42mm!important}
-  .yz3 .qrKutu canvas,.yz3 .qrKutu img{width:29mm!important;height:29mm!important}
-  .yz4 .qrKutu canvas,.yz4 .qrKutu img{width:21mm!important;height:21mm!important}
-  .yz2 .qrEtiket{font-size:20pt}
-  .yz3 .qrEtiket{font-size:14pt}
-  .yz4 .qrEtiket{font-size:11pt}
-  .qrKart{padding:3mm;border:1px solid #999}
-}
 .seg small{display:block;font-size:11px;opacity:.75;letter-spacing:0;text-transform:none;margin-top:2px}
 .qrKart{border:1px solid var(--line);border-radius:12px;padding:10px;text-align:center;background:#fff}
 .qrKutu{display:flex;justify-content:center;margin-bottom:6px}
 .qrEtiket{font-family:var(--cond);font-weight:700;font-size:18px;color:#111}
-@media print{
-  body *{visibility:hidden}
-  #qrYazdirAlani,#qrYazdirAlani *{visibility:visible}
-  #qrYazdirAlani{position:absolute;left:0;top:0;width:100%}
-  .qrKart{break-inside:avoid}
-}
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 </head>
@@ -236,6 +217,7 @@ textarea{min-height:110px;resize:vertical;font-family:ui-monospace,monospace;fon
 <nav>
   <button data-v="isemri"><b>☰</b>İş Emri</button>
   <button data-v="tanklar"><b>◨</b>Tanklar</button>
+  <button data-v="ozet"><b>▤</b>Özet</button>
   <button data-v="program"><b>⚙</b>Program</button>
 </nav>
 
@@ -509,6 +491,7 @@ function ciz(){
   document.getElementById('fab').style.display=(gorunum==='tanklar'&&yonetici)?'':'none';
   if(gorunum==='tanklar') cizTanklar();
   else if(gorunum==='isemri') cizIsEmri();
+  else if(gorunum==='ozet') cizOzet();
   else cizProgram();
 }
 
@@ -521,6 +504,52 @@ function tankKg(t){
   if(isNaN(v)) return 0;
   if(m[2]&&m[2].toLowerCase()==='t') v*=1000;
   return v;
+}
+function bugunBakimRaporu(){
+  // son 7 günün onaylı görevlerini kişi/saat ile topla
+  const kayitlar=[];
+  for(let i=0;i<7;i++){
+    const d=new Date(); d.setDate(d.getDate()-i);
+    const tarih=d.toISOString().slice(0,10);
+    const done=isemri[tarih]||{};
+    isEmriUret(tarih).forEach(x=>x.gorevler.forEach(k=>{
+      const v=done[x.t.id+':'+k];
+      if(v && typeof v==='object' && v.k){
+        kayitlar.push({tarih, kod:x.t.kod, gorev:GOREV[k], kisi:v.k, saat:v.s||'', urun:x.t.urun||''});
+      }
+    }));
+  }
+  return kayitlar;
+}
+function cizOzet(){
+  document.getElementById('hdr').innerHTML=`
+    <div class="top"><h1>Özet</h1><button class="icon" id="btnKilit">${yonetici?'🔓':'🔒'}</button></div>`;
+  document.getElementById('btnKilit').onclick=yoneticiGirisi;
+  const kgToplam=toplamKg();
+  const oz=urunOzeti();
+  const rapor=bugunBakimRaporu();
+  const e=document.getElementById('ekran');
+  e.innerHTML=`
+    <div class="sec">Stok Durumu</div>
+    <div class="ozetPanel">
+      ${oz.map(([u,v])=>`<div class="ozetSatir"><span class="ou">${u}</span><span class="oa">${v.adet} tank</span><span class="ok">${(v.kg/1000).toLocaleString('tr-TR',{maximumFractionDigits:1})} ton</span></div>`).join('')}
+      <div class="ozetSatir ozetTop"><span class="ou">TOPLAM</span><span class="oa">${tanklar.filter(t=>!t.bosaltildi).length} tank</span><span class="ok">${(kgToplam/1000).toLocaleString('tr-TR',{maximumFractionDigits:1})} ton</span></div>
+    </div>
+    <div class="sec">Yapılan Bakımlar<small style="float:right;font-size:12px">son 7 gün</small></div>
+    ${rapor.length?`<button class="btn ghost" id="raporPay">Raporu Paylaş</button>
+      <div class="raporListe">${rapor.map(r=>`
+        <div class="log"><span class="d">${kisaTarih(r.tarih)}</span>
+        <span class="v">${r.kod} · ${r.gorev}<span class="n">${r.kisi} · ${r.saat}</span></span></div>`).join('')}
+      </div>`:'<p class="hint">Son 7 günde onaylanmış bakım kaydı yok.</p>'}
+  `;
+  if(document.getElementById('raporPay')){
+    document.getElementById('raporPay').onclick=()=>{
+      let m='BAKIM RAPORU (son 7 gün)\n\n';
+      rapor.forEach(r=>{ m+=`${kisaTarih(r.tarih)} · ${r.kod} · ${r.gorev} — ${r.kisi} ${r.saat}\n`; });
+      if(navigator.share) navigator.share({text:m}).catch(()=>{});
+      else if(navigator.clipboard) navigator.clipboard.writeText(m).then(()=>toast('Panoya kopyalandı'));
+    };
+  }
 }
 function urunOzeti(){
   const o={};
@@ -556,13 +585,7 @@ function cizTanklar(){
     <div class="top"><h1>Tanklar</h1><button class="icon" id="btnOkut">Okut</button>${yonetici?'<button class="icon" id="btnQR">QR</button><button class="icon" id="btnHizli">Hızlı Ekle</button>'+(veriYuklendi?'':'<button class="icon" id="btnVeri">Veri Yükle</button>')+'<button class="icon" id="btnYedek">Yedek</button>':''}<button class="icon" id="btnKilit">${yonetici?'🔓':'🔒'}</button></div>
     <input id="ara" placeholder="Tank ara: A-14, biber…" value="${arama}" autocomplete="off">
     <div class="chips">${[['hepsi','Aktif'],['hazir','Hazır'],['yakin','Yaklaşan'],['gecti','Geçen'],['bosaltildi','Boşaltılan']]
-      .map(([k,ad])=>`<button class="chip" data-f="${k}" aria-pressed="${filtre===k}">${ad}<b>${say[k]||0}</b></button>`).join('')}
-    ${kgToplam?`<button class="ozetAc" id="btnOzet">Özet — ${say.hepsi} tank · ${(kgToplam/1000).toLocaleString('tr-TR',{maximumFractionDigits:1})} ton <span>${ozetAcik?'▲':'▼'}</span></button>`:''}
-    ${(kgToplam&&ozetAcik)?`<div class="ozetPanel">${urunOzeti().map(([u,v])=>`
-      <div class="ozetSatir"><span class="ou">${u}</span><span class="oa">${v.adet} tank</span><span class="ok">${(v.kg/1000).toLocaleString('tr-TR',{maximumFractionDigits:1})} ton</span></div>`).join('')}
-      <div class="ozetSatir ozetTop"><span class="ou">TOPLAM</span><span class="oa">${say.hepsi} tank</span><span class="ok">${(kgToplam/1000).toLocaleString('tr-TR',{maximumFractionDigits:1})} ton</span></div>
-    </div>`:''}`;
-  if(document.getElementById('btnOzet')) document.getElementById('btnOzet').onclick=()=>{ ozetAcik=!ozetAcik; cizTanklar(); };
+      .map(([k,ad])=>`<button class="chip" data-f="${k}" aria-pressed="${filtre===k}">${ad}<b>${say[k]||0}</b></button>`).join('')}`;
   document.getElementById('btnKilit').onclick=yoneticiGirisi;
   document.getElementById('btnOkut').onclick=qrOku;
   if(yonetici){
@@ -644,9 +667,9 @@ function cizIsEmri(){
       <button class="chip" data-u="hepsi" aria-pressed="${ieUrun==='hepsi'}">Tümü<b>${hepsiListe.length}</b></button>
       ${urunAdlari.map(u=>`<button class="chip" data-u="${u}" aria-pressed="${ieUrun===u}">${u}<b>${urunSay[u]}</b></button>`).join('')}
     </div>`:''}
-    ${gorevTipleri.length>1?`<div class="chips gorevChips" id="ieGorevChips">
+    ${grupHepsi['T']?`<div class="chips gorevChips" id="ieGorevChips">
       <button class="chip" data-g="hepsi" aria-pressed="${ieGorev==='hepsi'}">Tüm işler</button>
-      ${gorevTipleri.map(k=>`<button class="chip" data-g="${k}" aria-pressed="${ieGorev===k}">${GOREV[k]}<b>${grupHepsi[k].length}</b></button>`).join('')}
+      <button class="chip" data-g="T" aria-pressed="${ieGorev==='T'}">Sadece Tuz<b>${grupHepsi['T'].length}</b></button>
     </div>`:''}`;
   if(document.getElementById('ieChips')){
     document.getElementById('ieChips').onclick=e2=>{
@@ -678,7 +701,8 @@ function cizIsEmri(){
       <div><span>Tank</span><b>${liste.length}</b></div>
       <div><span>Tuz</span><b>${tuzToplam?tuzToplam+' kg':'—'}</b></div>
     </div>
-    ${bitti<toplamGorev?`<button class="btn hepsiBtn" id="hepsiOnay">Tümünü Onayla · ${toplamGorev-bitti} görev${ieUrun!=='hepsi'?' ('+ieUrun+')':''}</button>`:`<div class="tamamRozet">✓ Bugünün işleri tamam${ieUrun!=='hepsi'?' — '+ieUrun:''}</div>`}
+    ${bitti>=toplamGorev?`<div class="tamamRozet">✓ Bugünün işleri tamam${ieUrun!=='hepsi'?' — '+ieUrun:''}</div>`
+      :(yonetici?`<button class="btn hepsiBtn" id="hepsiOnay">Tümünü Onayla · ${toplamGorev-bitti} görev${ieUrun!=='hepsi'?' ('+ieUrun+')':''}</button>`:'')}
     ${gecikenler.length?`
     <div class="grup gec">
       <h3 style="color:var(--alarm)">Dünden Kalan<small>${gecikenler.length} görev</small></h3>
@@ -693,7 +717,7 @@ function cizIsEmri(){
     </div>`:''}
     ${GOREV_SIRA.filter(k=>grup[k]).map(k=>`
       <div class="grup">
-        <h3>${GOREV[k]}<small>${grup[k].length} tank${k==='T'?' · '+grup[k].reduce((n,x)=>n+(x.tuzKg||0),0)+' kg':''} <button class="tumuBtn" data-g="${k}">Tümü ✓</button></small></h3>
+        <h3>${GOREV[k]}<small>${grup[k].length} tank${k==='T'?' · '+grup[k].reduce((n,x)=>n+(x.tuzKg||0),0)+' kg':''}${yonetici?` <button class="tumuBtn" data-g="${k}">Tümü ✓</button>`:''}</small></h3>
         ${grup[k].map(x=>{
           const key=x.t.id+':'+k, ok=!!done[key];
           return `<button class="gorev ${ok?'ok':''}" data-key="${key}">
@@ -705,6 +729,7 @@ function cizIsEmri(){
       </div>`).join('')}`;
   e.onclick=async ev=>{
     if(ev.target.closest('#hepsiOnay')){
+      if(!yonetici){ toast('Toplu onay için yönetici PIN gerekli'); return; }
       const kalan=[];
       liste.forEach(x=>x.gorevler.forEach(k=>{ if(!done[x.t.id+':'+k]) kalan.push({x,k}); }));
       if(!kalan.length){ toast('Zaten hepsi onaylı'); return; }
@@ -722,6 +747,7 @@ function cizIsEmri(){
     }
     const tb=ev.target.closest('.tumuBtn');
     if(tb){
+      if(!yonetici){ toast('Toplu onay için yönetici PIN gerekli'); return; }
       const k=tb.dataset.g;
       const hedef=(grup[k]||[]).filter(x=>!done[x.t.id+':'+k]);
       if(!hedef.length){ toast('Zaten hepsi onaylı'); return; }
@@ -1044,8 +1070,10 @@ function kodBul(s){
   return m? m[1].toUpperCase() : null;
 }
 function satirAyristir(satir){
-  const s=satir.trim();
+  const s=satir.trim().replace(/[,;]+$/,'').trim();
   if(!s) return null;
+  // tek kelimelik kapanış satırları (Dolduruldu, Tamamdır vb.) sessizce atlanır
+  if(!/\s/.test(s) && !/-?\d/.test(s)) return null;
   const kod=kodBul(s);
   if(!kod) return {hata:true, satir:s, neden:'Tank kodu bulunamadı'};
 
@@ -1291,8 +1319,53 @@ function qrOlustur(){
         new QRCode(el,{text:tabanURL()+'?tank='+encodeURIComponent(t.kod), width:110, height:110});
       }
     });
-    q('#q_yazdir').onclick=()=>window.print();
+    q('#q_yazdir').onclick=()=>qrYazdir(liste, yzBoy);
   };
+}
+function qrYazdir(liste, yzBoy){
+  toast('Yazdırma hazırlanıyor…');
+  const sutun = yzBoy==='yz2'?2 : yzBoy==='yz4'?4 : 3;
+  const qrMM = yzBoy==='yz2'?42 : yzBoy==='yz4'?21 : 29;
+  const etkPt = yzBoy==='yz2'?20 : yzBoy==='yz4'?11 : 14;
+  // Her QR'ı gizli bir kutuda üretip dataURL'e çevir
+  const gecici=document.createElement('div');
+  gecici.style.cssText='position:absolute;left:-9999px;top:0';
+  document.body.appendChild(gecici);
+  const kartlar=[];
+  liste.forEach(t=>{
+    const kutu=document.createElement('div');
+    gecici.appendChild(kutu);
+    new QRCode(kutu,{text:tabanURL()+'?tank='+encodeURIComponent(t.kod), width:300, height:300, correctLevel:QRCode.CorrectLevel.M});
+    kartlar.push({kod:t.kod, el:kutu});
+  });
+  // canvas/img hazır olsun diye kısa bekleme
+  setTimeout(()=>{
+    let icerik='';
+    kartlar.forEach(k=>{
+      const cv=k.el.querySelector('canvas');
+      const im=k.el.querySelector('img');
+      let src='';
+      try{ src = cv ? cv.toDataURL('image/png') : (im?im.src:''); }catch(e){ src = im?im.src:''; }
+      icerik += `<div class="k"><img src="${src}"><div class="e">${k.kod}</div></div>`;
+    });
+    gecici.remove();
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>QR Etiketleri</title>
+    <style>
+      @page{size:A4;margin:8mm}
+      *{box-sizing:border-box;margin:0;padding:0}
+      body{font-family:Arial,sans-serif}
+      .grid{display:grid;grid-template-columns:repeat(${sutun},1fr);gap:5mm}
+      .k{border:1px solid #999;border-radius:3mm;padding:3mm;text-align:center;break-inside:avoid;page-break-inside:avoid}
+      .k img{width:${qrMM}mm;height:${qrMM}mm;display:block;margin:0 auto 2mm}
+      .e{font-weight:700;font-size:${etkPt}pt}
+    </style></head><body>
+      <div class="grid">${icerik}</div>
+      <script>window.onload=function(){setTimeout(function(){window.print();},300);};<\/script>
+    </body></html>`;
+    const w=window.open('','_blank');
+    if(!w){ toast('Açılır pencere engellendi. Tarayıcı ayarından izin ver.'); return; }
+    w.document.open(); w.document.write(html); w.document.close();
+  }, 400);
 }
 
 /* ================= QR ile açılan tank ekranı ================= */
