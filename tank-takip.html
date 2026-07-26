@@ -181,6 +181,8 @@ textarea{min-height:110px;resize:vertical;font-family:ui-monospace,monospace;fon
 .kamKutu{position:relative;width:100%;aspect-ratio:1;background:#0B1220;border-radius:16px;overflow:hidden;margin-top:8px}
 .kamKutu video{width:100%;height:100%;object-fit:cover}
 .kamCerceve{position:absolute;inset:14%;border:3px solid rgba(37,99,235,.9);border-radius:14px;box-shadow:0 0 0 100vmax rgba(0,0,0,.25)}
+.tumuBtn{margin-left:10px;background:linear-gradient(135deg,var(--yesil),var(--yesil2));color:#fff;border:none;
+  border-radius:999px;padding:4px 12px 3px;font-family:var(--cond);font-size:13.5px;font-weight:700;letter-spacing:.05em}
 .kimTags{margin-bottom:6px}
 .kimBtn{border-color:rgba(37,99,235,.35);color:var(--mavi);font-weight:600}
 .kimListe{margin-top:4px}
@@ -237,7 +239,7 @@ textarea{min-height:110px;resize:vertical;font-family:ui-monospace,monospace;fon
    Boş bırakılırsa uygulama sadece bu telefonda çalışır (eski davranış). */
 const FIREBASE_URL = 'https://tank-takip-default-rtdb.firebaseio.com';
 const K_TANK='tanktakip:tanklar', K_PROG='tanktakip:programv2', K_IS='tanktakip:isemri', K_VERI='tanktakip:veriYuklendi';
-let veriYuklendi=false, ozetAcik=false;
+let veriYuklendi=false, ozetAcik=false, ieUrun='hepsi';
 const ADMIN_PIN='2026';
 let yonetici=false;
 
@@ -605,7 +607,12 @@ document.getElementById('fab').onclick=()=>form();
 /* ---------- iş emri ---------- */
 function cizIsEmri(){
   if(!ieTarih) ieTarih=bugunISO();
-  const liste=isEmriUret(ieTarih);
+  const hepsiListe=isEmriUret(ieTarih);
+  const urunSay={};
+  hepsiListe.forEach(x=>{ const u=x.t.urun||'—'; urunSay[u]=(urunSay[u]||0)+1; });
+  const urunAdlari=Object.keys(urunSay).sort();
+  if(ieUrun!=='hepsi' && !urunAdlari.includes(ieUrun)) ieUrun='hepsi';
+  const liste = ieUrun==='hepsi' ? hepsiListe : hepsiListe.filter(x=>(x.t.urun||'—')===ieUrun);
   const done=isemri[ieTarih]||{};
   const grup={};
   liste.forEach(x=>x.gorevler.forEach(k=>{(grup[k]=grup[k]||[]).push(x);}));
@@ -620,7 +627,16 @@ function cizIsEmri(){
       <button class="icon" id="dG">‹</button>
       <input type="date" id="ieT" value="${ieTarih}">
       <button class="icon" id="dI">›</button>
-    </div>`;
+    </div>
+    ${urunAdlari.length>1?`<div class="chips" id="ieChips">
+      <button class="chip" data-u="hepsi" aria-pressed="${ieUrun==='hepsi'}">Tümü<b>${hepsiListe.length}</b></button>
+      ${urunAdlari.map(u=>`<button class="chip" data-u="${u}" aria-pressed="${ieUrun===u}">${u}<b>${urunSay[u]}</b></button>`).join('')}
+    </div>`:''}`;
+  if(document.getElementById('ieChips')){
+    document.getElementById('ieChips').onclick=e2=>{
+      const b=e2.target.closest('.chip'); if(b){ ieUrun=b.dataset.u; cizIsEmri(); }
+    };
+  }
   document.getElementById('ieT').onchange=e=>{ieTarih=e.target.value||bugunISO();cizIsEmri();};
   document.getElementById('dG').onclick=()=>{const d=new Date(ieTarih+'T00:00');d.setDate(d.getDate()-1);ieTarih=d.toISOString().slice(0,10);cizIsEmri();};
   document.getElementById('dI').onclick=()=>{const d=new Date(ieTarih+'T00:00');d.setDate(d.getDate()+1);ieTarih=d.toISOString().slice(0,10);cizIsEmri();};
@@ -655,7 +671,7 @@ function cizIsEmri(){
     </div>`:''}
     ${GOREV_SIRA.filter(k=>grup[k]).map(k=>`
       <div class="grup">
-        <h3>${GOREV[k]}<small>${grup[k].length} tank${k==='T'?' · '+grup[k].reduce((n,x)=>n+(x.tuzKg||0),0)+' kg':''}</small></h3>
+        <h3>${GOREV[k]}<small>${grup[k].length} tank${k==='T'?' · '+grup[k].reduce((n,x)=>n+(x.tuzKg||0),0)+' kg':''} <button class="tumuBtn" data-g="${k}">Tümü ✓</button></small></h3>
         ${grup[k].map(x=>{
           const key=x.t.id+':'+k, ok=!!done[key];
           return `<button class="gorev ${ok?'ok':''}" data-key="${key}">
@@ -666,8 +682,23 @@ function cizIsEmri(){
         }).join('')}
       </div>`).join('')}`;
   e.onclick=async ev=>{
+    const tb=ev.target.closest('.tumuBtn');
+    if(tb){
+      const k=tb.dataset.g;
+      const hedef=(grup[k]||[]).filter(x=>!done[x.t.id+':'+k]);
+      if(!hedef.length){ toast('Zaten hepsi onaylı'); return; }
+      const ek = k==='T' ? ('\nToplam '+hedef.reduce((n,x)=>n+(x.tuzKg||0),0)+' kg') : '';
+      const onay=await onayDialog(GOREV[k]+' — Tümü',
+        hedef.length+' tank onaylanacak'+(ieUrun!=='hepsi'?' ('+ieUrun+')':'')+'.'+ek, 'Hepsini Onayla');
+      if(!onay) return;
+      const d=isemri[ieTarih]=isemri[ieTarih]||{};
+      const ad=kullaniciAdi(), sa=saatSimdi();
+      hedef.forEach(x=>{ d[x.t.id+':'+k]={k:ad, s:sa}; });
+      await sSet(K_IS,isemri); cizIsEmri();
+      toast(hedef.length+' görev onaylandı');
+      return;
+    }
     const g=ev.target.closest('.gorev'); if(!g) return;
-    if(!yonetici){ toast('Sadece yönetici işaretleyebilir'); return; }
     const hedefTarih=g.dataset.tarih||ieTarih;
     const d=isemri[hedefTarih]=isemri[hedefTarih]||{};
     const yapildiMi=!!d[g.dataset.key];
