@@ -181,6 +181,9 @@ textarea{min-height:110px;resize:vertical;font-family:ui-monospace,monospace;fon
 .kamKutu{position:relative;width:100%;aspect-ratio:1;background:#0B1220;border-radius:16px;overflow:hidden;margin-top:8px}
 .kamKutu video{width:100%;height:100%;object-fit:cover}
 .kamCerceve{position:absolute;inset:14%;border:3px solid rgba(37,99,235,.9);border-radius:14px;box-shadow:0 0 0 100vmax rgba(0,0,0,.25)}
+.dolumKolon{flex:0 0 auto;display:flex;flex-direction:column;align-items:flex-end;gap:2px;align-self:flex-start;padding-top:2px}
+.dEtiket{font-family:var(--cond);font-size:11px;letter-spacing:.12em;color:var(--muted)}
+.dTarih{font-family:var(--cond);font-size:20px;font-weight:700;color:var(--mavi)}
 .raporListe{margin-top:6px}
 .gorevChips{margin-top:7px}
 .gorevChips .chip[aria-pressed="true"]{background:linear-gradient(135deg,var(--yesil),var(--yesil2));border-color:transparent;color:#fff}
@@ -625,6 +628,10 @@ function cizTanklar(){
           <span class="pill">${g}/${t.hedefGun} gün</span>
           ${son?`<span class="pill">pH ${son.ph||'—'}</span>`:''}
         </div>
+      </div>
+      <div class="dolumKolon">
+        <span class="dEtiket">DOLUM</span>
+        <span class="dTarih">${kisaTarih(t.baslangic)}</span>
       </div>
     </button>`;
   }).join('') : `<div class="empty"><b>Kayıt yok</b>${q?'Arama sonucu boş.':'+ Tank ile dolum kaydı aç.'}</div>`;
