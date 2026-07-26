@@ -194,8 +194,19 @@ textarea{min-height:110px;resize:vertical;font-family:ui-monospace,monospace;fon
 #qrYazdirAlani{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-top:14px}
 @media print{
   @page{margin:8mm}
-  #qrYazdirAlani{grid-template-columns:repeat(3,1fr);gap:6mm}
+  #qrYazdirAlani{gap:5mm}
+  #qrYazdirAlani.yz2{grid-template-columns:repeat(2,1fr)}
+  #qrYazdirAlani.yz3{grid-template-columns:repeat(3,1fr)}
+  #qrYazdirAlani.yz4{grid-template-columns:repeat(4,1fr)}
+  .yz2 .qrKutu canvas,.yz2 .qrKutu img{width:42mm!important;height:42mm!important}
+  .yz3 .qrKutu canvas,.yz3 .qrKutu img{width:29mm!important;height:29mm!important}
+  .yz4 .qrKutu canvas,.yz4 .qrKutu img{width:21mm!important;height:21mm!important}
+  .yz2 .qrEtiket{font-size:20pt}
+  .yz3 .qrEtiket{font-size:14pt}
+  .yz4 .qrEtiket{font-size:11pt}
+  .qrKart{padding:3mm;border:1px solid #999}
 }
+.seg small{display:block;font-size:11px;opacity:.75;letter-spacing:0;text-transform:none;margin-top:2px}
 .qrKart{border:1px solid var(--line);border-radius:12px;padding:10px;text-align:center;background:#fff}
 .qrKutu{display:flex;justify-content:center;margin-bottom:6px}
 .qrEtiket{font-family:var(--cond);font-weight:700;font-size:18px;color:#111}
@@ -1166,11 +1177,25 @@ function qrOlustur(){
         <div><label>Son no</label><input type="number" id="q_son" value="20"></div>
       </div>
     </div>
+    <label>Etiket boyutu</label>
+    <div class="seg">
+      <button id="qb2" aria-pressed="false">Büyük<br><small>8/sayfa</small></button>
+      <button id="qb3" aria-pressed="true">Orta<br><small>15/sayfa</small></button>
+      <button id="qb4" aria-pressed="false">Küçük<br><small>28/sayfa</small></button>
+    </div>
     <button class="btn" id="q_uret">QR'ları Oluştur</button>
     <div id="qSonuc"></div>
   `);
   const q=s=>p.querySelector(s);
-  let mod='aralik';
+  let mod='aralik', yzBoy='yz3';
+  ['2','3','4'].forEach(n=>{
+    q('#qb'+n).onclick=()=>{
+      yzBoy='yz'+n;
+      ['2','3','4'].forEach(m=>q('#qb'+m).setAttribute('aria-pressed', m===n));
+      const alan=q('#qrYazdirAlani');
+      if(alan) alan.className=yzBoy;
+    };
+  });
   q('#qm1').onclick=()=>{mod='aralik';q('#qm1').setAttribute('aria-pressed','true');q('#qm2').setAttribute('aria-pressed','false');q('#qAralik').style.display='';};
   q('#qm2').onclick=()=>{mod='tumu';q('#qm2').setAttribute('aria-pressed','true');q('#qm1').setAttribute('aria-pressed','false');q('#qAralik').style.display='none';};
   q('#q_uret').onclick=()=>{
@@ -1187,7 +1212,7 @@ function qrOlustur(){
     q('#qSonuc').innerHTML=`
       <p class="hint">${liste.length} adet QR. Aşağıdan yazdırabilirsin.</p>
       <button class="btn" id="q_yazdir">Yazdır</button>
-      <div id="qrYazdirAlani">${liste.map(t=>`
+      <div id="qrYazdirAlani" class="${yzBoy}">${liste.map(t=>`
         <div class="qrKart"><div class="qrKutu" id="qr_${t.kod.replace(/[^A-Z0-9]/g,'_')}"></div><div class="qrEtiket">${t.kod}</div></div>
       `).join('')}</div>
     `;
