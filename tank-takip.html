@@ -230,7 +230,14 @@ textarea{min-height:110px;resize:vertical;font-family:ui-monospace,monospace;fon
    adresini yapıştır (örn: 'https://tank-takip-default-rtdb.firebaseio.com').
    Boş bırakılırsa uygulama sadece bu telefonda çalışır (eski davranış). */
 const FIREBASE_URL = 'https://tank-takip-default-rtdb.firebaseio.com';
-const K_TANK='tanktakip:tanklar', K_PROG='tanktakip:programv2', K_IS='tanktakip:isemri', K_VERI='tanktakip:veriYuklendi';
+const K_TANK='tanktakip:tanklar', K_PROG='tanktakip:programv2', K_IS='tanktakip:isemri', K_VERI='tanktakip:veriYuklendi', K_DEV='tanktakip:devirdaimSure';
+const DEV_VARSAYILAN={A:'2+2',B:'2+2',C:'2+2',D:'1+1',E:'1+1'};
+let devirdaimSure={...DEV_VARSAYILAN};
+function devSure(t){
+  const s=seri(t);
+  const v=devirdaimSure[s];
+  return v? v+' saat (sabah+akşam)' : '';
+}
 let veriYuklendi=false, ozetAcik=false, ieUrun='hepsi', ieGorev='hepsi';
 const ADMIN_PIN='2026';
 let yonetici=false;
@@ -288,7 +295,8 @@ function canliSenkronBaslat(){
   if(!FIREBASE_URL) return;
   setInterval(async()=>{
     if(document.getElementById('panel')) return; // düzenleme sırasında araya girme
-    const [t,p,i]=await Promise.all([fbGet(K_TANK),fbGet(K_PROG),fbGet(K_IS)]);
+    const [t,p,i,dv]=await Promise.all([fbGet(K_TANK),fbGet(K_PROG),fbGet(K_IS),fbGet(K_DEV)]);
+    if(dv!==undefined) devirdaimSure=dv;
     let degisti=false;
     if(t!==undefined && JSON.stringify(t)!==JSON.stringify(tanklar)){ tanklar=t; degisti=true; }
     if(p!==undefined && JSON.stringify(p)!==JSON.stringify(program)){ program=p; degisti=true; }
@@ -730,7 +738,7 @@ function cizIsEmri(){
           return `<button class="gorev ${ok?'ok':''}" data-key="${key}">
             <span class="cb"></span>
             <span class="gk">${x.t.kod}</span>
-            <span class="gd"><b>${x.g}. gün</b> · ${x.t.urun||''}${k==='T'&&x.tuzKg?` · <b>${x.tuzKg} kg</b>`:''}${ok&&done[key]&&done[key].k?`<span class="n">✓ ${done[key].k} · ${done[key].s||''}</span>`:''}</span>
+            <span class="gd"><b>${x.g}. gün</b> · ${x.t.urun||''}${k==='T'&&x.tuzKg?` · <b>${x.tuzKg} kg</b>`:''}${(k==='D'||k==='D2'||k==='DV')&&devSure(x.t)?` · <b>${devirdaimSure[seri(x.t)]} sa</b>`:''}${ok&&done[key]&&done[key].k?`<span class="n">✓ ${done[key].k} · ${done[key].s||''}</span>`:''}</span>
           </button>`;
         }).join('')}
       </div>`).join('')}`;
@@ -855,7 +863,21 @@ function cizProgram(){
     </button>`;
   }).join(''):'<div class="empty"><b>Program boş</b>Bu ürüne gün ekle.</div>')+
   (yonetici?`<button class="btn ghost" id="gunEkle">+ Gün ekle</button>`:'')+
-  `<p class="hint">Seri harfi = tank kodunun ilk harfi (A–E). Tuz kg değerleri seriye göre uygulanır.</p>`;
+  `<div class="sec">Devirdaim Süreleri<small style="float:right;font-size:12px">seriye göre, saat (sabah+akşam)</small></div>
+  <div class="tuzgrid">${['A','B','C','D','E'].map(s=>
+    `<div><label>${s}</label><input id="dv${s}" value="${devirdaimSure[s]||''}" placeholder="2+2" ${yonetici?'':'disabled'}></div>`).join('')}</div>
+  ${yonetici?`<button class="btn ghost" id="dvKaydet">Süreleri Kaydet</button>`:''}
+  <p class="hint">Seri harfi = tank kodunun ilk harfi (A–E). Tuz kg değerleri ve devirdaim süreleri seriye göre uygulanır.</p>`;
+  if(yonetici && document.getElementById('dvKaydet')){
+    document.getElementById('dvKaydet').onclick=async()=>{
+      ['A','B','C','D','E'].forEach(s=>{
+        const v=document.getElementById('dv'+s).value.trim();
+        if(v) devirdaimSure[s]=v; else delete devirdaimSure[s];
+      });
+      await sSet(K_DEV,devirdaimSure);
+      toast('Devirdaim süreleri kaydedildi');
+    };
+  }
   document.getElementById('ekran').onclick=e=>{
     if(!yonetici) return;
     if(e.target.closest('#gunEkle')){
@@ -1427,6 +1449,7 @@ function cizTankIsEmri(kod){
           <span class="cb"></span>
           <span class="gd"><b class="qrad">${GOREV[k]}</b>
             ${tuzKg?`<span class="kgrozet">${tuzKg} kg</span>`:''}
+            ${(k==='D'||k==='D2'||k==='DV')&&devSure(t)?`<span class="kgrozet" style="background:linear-gradient(135deg,var(--yesil),var(--yesil2))">${devirdaimSure[seri(t)]} saat</span>`:''}
             ${ok&&done[key]&&done[key].k?`<span class="n">✓ ${done[key].k} · ${done[key].s||''}</span>`:`<span class="n">Dokun ve onayla</span>`}</span>
         </button>`;
       }).join('')}
@@ -1572,6 +1595,7 @@ function yedek(){
   if(!program){ program=varsayilanProgram(); await sSet(K_PROG,program); }
   isemri=await sGet(K_IS,{});
   veriYuklendi=!!(await sGet(K_VERI,false));
+  devirdaimSure=await sGet(K_DEV,{...DEV_VARSAYILAN});
   /* eski sürümden gelen ürün adlarını eşle */
   const esle={'Salatalık No.1':'Salatalık No.1'};
   tanklar.forEach(t=>{ if(t.urun&&!program[t.urun]){ const k=Object.keys(program).find(u=>u.toLocaleLowerCase('tr')===t.urun.toLocaleLowerCase('tr')); if(k) t.urun=k; } });
