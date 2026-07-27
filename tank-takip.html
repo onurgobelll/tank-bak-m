@@ -193,6 +193,23 @@ textarea{min-height:110px;resize:vertical;font-family:ui-monospace,monospace;fon
 .dEtiket{font-family:var(--cond);font-size:11px;letter-spacing:.12em;color:var(--muted)}
 .dTarih{font-family:var(--cond);font-size:20px;font-weight:700;color:var(--mavi)}
 .raporListe{margin-top:6px}
+.istisna{display:flex;gap:10px;align-items:baseline;padding:8px 0;border-bottom:1px solid var(--line)}
+.istisna:last-child{border-bottom:none}
+.iKod{font-family:var(--cond);font-size:18px;font-weight:700;color:var(--ink);flex:0 0 72px}
+.iAck{flex:1;font-size:13px;color:var(--muted)}
+.iAck b{color:var(--amber)}
+.iAck em{font-style:normal;font-size:12px;opacity:.85}
+.istisna{display:flex;gap:10px;align-items:baseline;padding:8px 0;border-bottom:1px solid var(--line)}
+.istisna:last-child{border-bottom:none}
+.iKod{flex:0 0 62px;font-family:var(--cond);font-size:17px;font-weight:700;color:var(--ink)}
+.iAck{flex:1;font-size:13px;color:var(--muted)}
+.iAck b{color:var(--amber)}
+.iAck em{font-style:normal;font-size:12px;opacity:.85}
+.istBaslik{font-family:var(--cond);font-size:14px;letter-spacing:.08em;text-transform:uppercase;color:var(--amber);margin-bottom:6px}
+.istSatir{font-size:13px;padding:6px 0;border-bottom:1px solid var(--line)}
+.istSatir:last-child{border-bottom:none}
+.istSatir b{color:var(--ink)}
+.istSatir .n{display:block;font-size:12px;color:var(--muted);margin-top:1px}
 .dstat{display:flex;gap:9px;margin-bottom:10px}
 .dkart{flex:1;background:var(--surface);border:1px solid var(--line);border-radius:15px;padding:12px 10px;
   text-align:center;box-shadow:var(--golge)}
@@ -264,9 +281,11 @@ const FIREBASE_URL = 'https://tank-takip-default-rtdb.firebaseio.com';
 const K_TANK='tanktakip:tanklar', K_PROG='tanktakip:programv2', K_IS='tanktakip:isemri', K_VERI='tanktakip:veriYuklendi', K_DEV='tanktakip:devirdaimSure';
 const DEV_VARSAYILAN={A:'2+2',B:'2+2',C:'2+2',D:'1+1',E:'1+1'};
 let devirdaimSure={...DEV_VARSAYILAN};
+function devSureDeger(t){
+  return (t.devSure&&String(t.devSure).trim()) || devirdaimSure[seri(t)] || '';
+}
 function devSure(t){
-  const s=seri(t);
-  const v=devirdaimSure[s];
+  const v=devSureDeger(t);
   return v? v+' saat (sabah+akşam)' : '';
 }
 let veriYuklendi=false, ozetAcik=false, ieUrun='hepsi', ieGorev='hepsi';
@@ -590,6 +609,8 @@ function cizOzet(){
   const kgToplam=toplamKg();
   const oz=urunOzeti();
   const rapor=bugunBakimRaporu();
+  const ozelSureli=aktif.filter(t=>t.devSure);
+  const erkenler=aktif.filter(t=>t.erkenBitiren);
   // çalışan performansı (son 7 gün)
   const perf={};
   rapor.forEach(r=>{ perf[r.kisi]=(perf[r.kisi]||0)+1; });
@@ -622,6 +643,48 @@ function cizOzet(){
     ${gecikenler.slice(0,5).map(x=>`<div class="uyari">⏰ ${x.t.kod} — ${GOREV[x.gorev]} · ${kisaTarih(x.tarih)}'den beri bekliyor</div>`).join('')}
     ${gecenler.slice(0,5).map(t=>`<div class="uyari">🔴 ${t.kod} — ${gun(t)}. gün, hedef ${t.hedefGun} gündü (${t.urun||''})</div>`).join('')}
     ${(gecikenler.length>5)?`<p class="hint">+${gecikenler.length-5} geciken görev daha — İş Emri'nde "Dünden Kalan" bölümünde</p>`:''}`:''}
+    ${(()=>{
+      const ozelSure=aktif.filter(t=>t.devSure);
+      const erken=aktif.filter(t=>t.erkenBitiren);
+      if(!ozelSure.length && !erken.length) return '';
+      return `<div class="sec">İstisnalar<small style="float:right;font-size:12px">normalden sapan tanklar</small></div>
+      <div class="grafKutu">
+        ${ozelSure.map(t=>`<div class="istisna">
+          <span class="iKod">${t.kod}</span>
+          <span class="iAck">Devirdaim <b>${t.devSure} saat</b> <em>(seri ${seri(t)} normalde ${devirdaimSure[seri(t)]||'—'})</em></span>
+        </div>`).join('')}
+        ${erken.map(t=>`<div class="istisna">
+          <span class="iKod">${t.kod}</span>
+          <span class="iAck">Erken hazır — <b>${t.hedefGun}. gün</b> <em>(${t.erkenBitiren}${t.erkenTarih?' · '+kisaTarih(t.erkenTarih):''})</em></span>
+        </div>`).join('')}
+      </div>`;
+    })()}
+    ${(ozelSureli.length||erkenler.length)?`
+    <div class="sec">İstisnalar<small style="float:right;font-size:12px">standart dışı ayar</small></div>
+    <div class="grafKutu">
+      ${ozelSureli.map(t=>`<div class="istisna">
+        <span class="iKod">${t.kod}</span>
+        <span class="iAck">Devirdaim <b>${t.devSure} saat</b> <em>(seri ${seri(t)} normalde ${devirdaimSure[seri(t)]||'—'})</em></span>
+      </div>`).join('')}
+      ${erkenler.map(t=>`<div class="istisna">
+        <span class="iKod">${t.kod}</span>
+        <span class="iAck">Erken hazır — <b>${t.hedefGun}. gün</b> <em>${t.erkenBitiren}${t.erkenTarih?' · '+kisaTarih(t.erkenTarih):''}</em></span>
+      </div>`).join('')}
+    </div>`:''}
+    ${(()=>{
+      const erken=aktif.filter(t=>t.erkenBitiren);
+      const ozelSure=aktif.filter(t=>t.devSure);
+      if(!erken.length&&!ozelSure.length) return '';
+      return `<div class="sec">İstisnalar<small style="float:right;font-size:12px">programdan sapma</small></div>
+      <div class="grafKutu">
+        ${erken.length?`<div class="istBaslik">Erken hazır işaretlenen (${erken.length})</div>
+          ${erken.map(t=>`<div class="istSatir"><b>${t.kod}</b> ${t.urun||''} · ${t.hedefGun}. günde bitirildi
+            <span class="n">${t.erkenBitiren}${t.erkenTarih?' · '+kisaTarih(t.erkenTarih):''}</span></div>`).join('')}`:''}
+        ${ozelSure.length?`<div class="istBaslik" style="margin-top:${erken.length?'12px':'0'}">Özel devirdaim süresi (${ozelSure.length})</div>
+          ${ozelSure.map(t=>`<div class="istSatir"><b>${t.kod}</b> ${t.urun||''} · <b>${t.devSure} saat</b>
+            <span class="n">seri varsayılanı: ${devirdaimSure[seri(t)]||'—'}</span></div>`).join('')}`:''}
+      </div>`;
+    })()}
     <div class="sec">Stok Dağılımı</div>
     <div class="grafKutu">
       ${oz.map(([u,v])=>`
@@ -855,7 +918,7 @@ function cizIsEmri(){
           return `<button class="gorev ${ok?'ok':''}" data-key="${key}">
             <span class="cb"></span>
             <span class="gk">${x.t.kod}</span>
-            <span class="gd"><b>${x.g}. gün</b> · ${x.t.urun||''}${k==='T'&&x.tuzKg?` · <b>${x.tuzKg} kg</b>`:''}${(k==='D'||k==='D2'||k==='DV')&&devSure(x.t)?` · <b>${devirdaimSure[seri(x.t)]} sa</b>`:''}${ok&&done[key]&&done[key].k?`<span class="n">✓ ${done[key].k} · ${done[key].s||''}</span>`:''}</span>
+            <span class="gd"><b>${x.g}. gün</b> · ${x.t.urun||''}${k==='T'&&x.tuzKg?` · <b>${x.tuzKg} kg</b>`:''}${(k==='D'||k==='D2'||k==='DV')&&devSureDeger(x.t)?` · <b>${devSureDeger(x.t)} sa${x.t.devSure?' *':''}</b>`:''}${ok&&done[key]&&done[key].k?`<span class="n">✓ ${done[key].k} · ${done[key].s||''}</span>`:''}</span>
           </button>`;
         }).join('')}
       </div>`).join('')}`;
@@ -1073,6 +1136,8 @@ function form(id){
       <div><label>Dolum tarihi</label><input type="date" id="f_bas" value="${t?t.baslangic:bugunISO()}"></div>
       <div><label>Hedef gün</label><input type="number" id="f_hedef" value="${t?t.hedefGun:21}" min="1"></div>
     </div>
+    <label>Devirdaim süresi (bu tanka özel)</label>
+    <input id="f_dev" value="${t&&t.devSure?t.devSure:''}" placeholder="Boş = seri varsayılanı${t?` (${devirdaimSure[seri(t)]||'—'})`:''}">
     <label>Not</label><input id="f_not" value="${t?(t.notlar||''):''}" placeholder="Parti no, tedarikçi, tuz oranı…">
     <button class="btn" id="f_kaydet">Kaydet</button>
     <p class="hint">1. gün = dolum günü. İş emri, ürünün programına göre otomatik çıkar.</p>
@@ -1100,6 +1165,7 @@ function form(id){
       urun:q('#f_urun').value,
       baslangic:q('#f_bas').value||bugunISO(),
       hedefGun:+q('#f_hedef').value||21,
+      devSure:q('#f_dev').value.trim(),
       notlar:q('#f_not').value.trim()
     };
     if(mod==='toplu'){
@@ -1210,6 +1276,12 @@ function detay(id){
       <span class="v">pH ${o.ph||'—'} <em>·</em> Tuz ${o.tuz||'—'}${o.tuz?'%':''} <em>·</em> ${o.sicaklik||'—'}${o.sicaklik?'°':''}
       ${o.not?`<span class="n">${o.not}</span>`:''}</span></div>`).join(''):'<p class="hint">Henüz ölçüm girilmedi.</p>'}
     ${yonetici?`
+    <h3>Devirdaim Süresi</h3>
+    <div class="two" style="align-items:flex-end">
+      <div style="flex:2"><label>Bu tanka özel (boş = seri varsayılanı: ${devirdaimSure[seri(t)]||'—'})</label>
+      <input id="t_dev" value="${t.devSure||''}" placeholder="örn: 2 veya 2+2"></div>
+      <button class="btn ghost" id="t_devKaydet" style="flex:1;margin-top:0">Kaydet</button>
+    </div>
     <h3>İşlemler</h3>
     <button class="btn ghost" id="duzenle">Tankı düzenle</button>
     ${t.bosaltildi
@@ -1245,6 +1317,14 @@ function detay(id){
   }else{
     q('#geriac').onclick=async()=>{t.bosaltildi='';await sSet(K_TANK,tanklar);detay(id);};
   }
+  const tdv=q('#t_devKaydet');
+  if(tdv) tdv.onclick=async()=>{
+    const v=q('#t_dev').value.trim();
+    if(v) t.devSure=v; else delete t.devSure;
+    await sSet(K_TANK,tanklar);
+    detay(id);
+    toast(v? t.kod+' devirdaim: '+v+' saat' : t.kod+' seri varsayılanına döndü');
+  };
   q('#duzenle').onclick=()=>form(id);
   q('#sil').onclick=async()=>{
     if(!confirm(t.kod+' ve tüm ölçümleri silinsin mi?')) return;
@@ -1618,6 +1698,7 @@ function cizTankIsEmri(kod){
           <span class="pill ${SINIF[d]}">${ETIKET[d]}</span>
           <span class="pill">${g}/${t.hedefGun} gün</span>
           <span class="pill">Dolum ${kisaTarih(t.baslangic)}</span>
+          ${t.devSure?`<span class="pill soon">Devirdaim özel: ${t.devSure} sa</span>`:''}
         </div>
         ${(()=>{const sb=tankBakimGecmisi(t,1)[0];return sb?`<p class="hint" style="margin:7px 0 0">Son bakım: ${sb.gorev} · ${kisaTarih(sb.tarih)}${sb.kisi?' · '+sb.kisi:''}</p>`:'';})()}
       </div>
@@ -1636,7 +1717,7 @@ function cizTankIsEmri(kod){
           html+=`<button class="gorev qrgorev ${ok?'ok':''}" data-key="${key}">
             <span class="cb"></span>
             <span class="gd"><b class="qrad">${GOREV[k]}</b>
-              ${devSure(t)?`<span class="kgrozet" style="background:linear-gradient(135deg,var(--yesil),var(--yesil2))">${devirdaimSure[seri(t)]} saat</span>`:''}
+              ${devSureDeger(t)?`<span class="kgrozet" style="background:linear-gradient(135deg,var(--yesil),var(--yesil2))">${devSureDeger(t)} saat${t.devSure?' (özel)':''}</span>`:''}
               ${ok&&done[key]&&done[key].k?`<span class="n">✓ ${done[key].k} · ${done[key].s||''}</span>`:`<span class="n">Dokun ve onayla</span>`}</span>
           </button>`;
         });
