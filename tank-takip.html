@@ -205,6 +205,19 @@ textarea{min-height:110px;resize:vertical;font-family:ui-monospace,monospace;fon
 .iAck{flex:1;font-size:13px;color:var(--muted)}
 .iAck b{color:var(--amber)}
 .iAck em{font-style:normal;font-size:12px;opacity:.85}
+.kart-erken{border-color:var(--amber)!important;border-width:2px;background:linear-gradient(135deg,#FFFFFF 35%,#FFF6E6)!important}
+.kart-erken::before{background:var(--amber)!important;width:7px!important}
+.erkenPill{background:linear-gradient(135deg,#D97706,#F59E0B);color:#fff;border-color:transparent;font-weight:700;letter-spacing:.06em}
+.dk-erken b{color:var(--amber)}
+.dk-erken{border-color:rgba(217,119,6,.45);background:linear-gradient(135deg,#FFFFFF 40%,#FFF7E8)}
+.erkenBanner{width:100%;display:flex;align-items:center;gap:12px;text-align:left;
+  background:linear-gradient(135deg,#FFF4E0,#FFE9C7);border:2px solid var(--amber);border-radius:15px;
+  padding:13px 15px;margin-bottom:12px;box-shadow:0 4px 14px rgba(217,119,6,.18)}
+.ebIkon{font-size:24px;line-height:1}
+.ebMetin{flex:1;min-width:0}
+.ebMetin b{display:block;font-family:var(--cond);font-size:17px;letter-spacing:.03em;color:#8A5A06}
+.ebMetin small{display:block;font-size:12px;color:#A06B10;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ebOk{font-size:22px;color:#A06B10}
 .istBaslik{font-family:var(--cond);font-size:14px;letter-spacing:.08em;text-transform:uppercase;color:var(--amber);margin-bottom:6px}
 .istSatir{font-size:13px;padding:6px 0;border-bottom:1px solid var(--line)}
 .istSatir:last-child{border-bottom:none}
@@ -634,10 +647,18 @@ function cizOzet(){
       <div class="dkart ${hazirlar.length?'dk-hazir':''}"><span>Hazır</span><b>${hazirlar.length}</b><small>tank</small></div>
     </div>
     <div class="dstat">
+      ${aktif.filter(t=>t.erkenBitiren).length?`<div class="dkart dk-erken"><span>⬇ Erken</span><b>${aktif.filter(t=>t.erkenBitiren).length}</b><small>tank</small></div>`:''}
       <div class="dkart"><span>Bugün Tuz</span><b>${tuzBugun}</b><small>kg</small></div>
       <div class="dkart"><span>Stok</span><b>${(kgToplam/1000).toLocaleString('tr-TR',{maximumFractionDigits:1})}</b><small>ton</small></div>
       <div class="dkart ${gecenler.length?'dk-alarm':''}"><span>Süre Geçen</span><b>${gecenler.length}</b><small>tank</small></div>
     </div>
+    ${(()=>{const erk=aktif.filter(t=>t.erkenBitiren);return erk.length?`
+      <button class="erkenBanner" id="erkenGit">
+        <span class="ebIkon">⬇</span>
+        <span class="ebMetin"><b>${erk.length} tank erken hazır işaretlendi</b>
+        <small>${erk.slice(0,4).map(t=>t.kod+' ('+t.hedefGun+'g)').join(' · ')}${erk.length>4?' +'+(erk.length-4):''}</small></span>
+        <span class="ebOk">›</span>
+      </button>`:''})()}
     ${gecikenler.length||gecenler.length?`
     <div class="sec" style="color:var(--alarm)">Uyarılar</div>
     ${gecikenler.slice(0,5).map(x=>`<div class="uyari">⏰ ${x.t.kod} — ${GOREV[x.gorev]} · ${kisaTarih(x.tarih)}'den beri bekliyor</div>`).join('')}
@@ -725,6 +746,9 @@ function cizOzet(){
       ${rapor.length>15?`<p class="hint">+${rapor.length-15} kayıt daha CSV'de</p>`:''}
       </div>`:'<p class="hint">Son 7 günde onaylanmış bakım kaydı yok.</p>'}
   `;
+  if(document.getElementById('erkenGit')){
+    document.getElementById('erkenGit').onclick=()=>{ gorunum='tanklar'; filtre='erken'; ciz(); };
+  }
   if(document.getElementById('raporPay')){
     document.getElementById('raporPay').onclick=()=>{
       let m='BAKIM RAPORU (son 7 gün)\n\n';
@@ -766,16 +790,17 @@ function toplamKg(){
   return Math.round(kg);
 }
 function cizTanklar(){
-  const say={hepsi:0,hazir:0,yakin:0,gecti:0,bosaltildi:0};
+  const say={hepsi:0,hazir:0,yakin:0,gecti:0,bosaltildi:0,erken:0};
   tanklar.forEach(t=>{
     if(t.bosaltildi){say.bosaltildi++;return;}
     say.hepsi++; const d=durum(t); if(say[d]!==undefined) say[d]++;
+    if(t.erkenBitiren) say.erken++;
   });
   const kgToplam=toplamKg();
   document.getElementById('hdr').innerHTML=`
     <div class="top"><h1>Tanklar</h1><button class="icon" id="btnOkut">Okut</button>${yonetici?'<button class="icon" id="btnQR">QR</button><button class="icon" id="btnHizli">Hızlı Ekle</button>'+(veriYuklendi?'':'<button class="icon" id="btnVeri">Veri Yükle</button>')+'<button class="icon" id="btnYedek">Yedek</button>':''}<button class="icon" id="btnKilit">${yonetici?'🔓':'🔒'}</button></div>
     <input id="ara" placeholder="Tank ara: A-14, biber…" value="${arama}" autocomplete="off">
-    <div class="chips">${[['hepsi','Aktif'],['hazir','Hazır'],['yakin','Yaklaşan'],['gecti','Geçen'],['bosaltildi','Boşaltılan']]
+    <div class="chips">${[['hepsi','Aktif'],['erken','⬇ Erken'],['hazir','Hazır'],['yakin','Yaklaşan'],['gecti','Geçen'],['bosaltildi','Boşaltılan']]
       .map(([k,ad])=>`<button class="chip" data-f="${k}" aria-pressed="${filtre===k}">${ad}<b>${say[k]||0}</b></button>`).join('')}`;
   document.getElementById('btnKilit').onclick=yoneticiGirisi;
   document.getElementById('btnOkut').onclick=qrOku;
@@ -796,22 +821,24 @@ function cizTanklar(){
     if(filtre==='bosaltildi') return !!t.bosaltildi;
     if(t.bosaltildi) return false;
     if(filtre==='hepsi') return true;
+    if(filtre==='erken') return !!t.erkenBitiren;
     return durum(t)===filtre;
   });
   const sira={gecti:0,hazir:1,yakin:2,devam:3,bosaltildi:4};
-  liste.sort((a,b)=>sira[durum(a)]-sira[durum(b)]||a.kod.localeCompare(b.kod,'tr',{numeric:true}));
+  liste.sort((a,b)=>(b.erkenBitiren?1:0)-(a.erkenBitiren?1:0)||sira[durum(a)]-sira[durum(b)]||a.kod.localeCompare(b.kod,'tr',{numeric:true}));
 
   document.getElementById('ekran').innerHTML = liste.length ? liste.map(t=>{
     const g=gun(t),d=durum(t);
     const yuzde=Math.max(6,Math.min(100,Math.round(g/ +t.hedefGun*100)));
     const gcls=d==='gecti'?'g-late':(d==='yakin'||d==='hazir')?'g-warn':'';
     const son=(t.olcumler||[])[0];
-    return `<button class="card st-${d}" data-id="${t.id}">
+    return `<button class="card st-${d} ${t.erkenBitiren?'kart-erken':''}" data-id="${t.id}">
       <div class="gauge ${gcls}"><div class="cap"></div><div class="fill" style="height:${yuzde}%"></div><div class="gday">${g}</div></div>
       <div class="info">
         <div class="row1"><span class="kod">${t.kod}</span><span class="kap">${t.kapasite||''}</span></div>
         <div class="urun">${t.urun||'—'}</div>
         <div class="meta">
+          ${t.erkenBitiren?`<span class="pill erkenPill">⬇ ERKEN ${t.hedefGun}G</span>`:''}
           <span class="pill ${SINIF[d]}">${ETIKET[d]}</span>
           <span class="pill">${g}/${t.hedefGun} gün</span>
           ${son?`<span class="pill">pH ${son.ph||'—'}</span>`:''}
