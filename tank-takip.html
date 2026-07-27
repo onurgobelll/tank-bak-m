@@ -52,6 +52,14 @@ main{padding:8px 16px 0}
   border-radius:var(--r);padding:14px 15px;margin-bottom:12px;width:100%;text-align:left;box-shadow:var(--golge);
   position:relative;overflow:hidden;transition:transform .12s ease}
 .card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:5px;background:linear-gradient(var(--mavi),var(--yesil))}
+.card.st-hazir{background:linear-gradient(135deg,#FFFFFF 40%,#EAF9F0);border-color:rgba(21,163,74,.45)}
+.card.st-hazir::before{background:var(--yesil)}
+.card.st-yakin{background:linear-gradient(135deg,#FFFFFF 40%,#FDF6E7);border-color:rgba(194,116,10,.4)}
+.card.st-yakin::before{background:var(--amber)}
+.card.st-gecti{background:linear-gradient(135deg,#FFFFFF 30%,#FDECEF);border-color:rgba(220,38,71,.5)}
+.card.st-gecti::before{background:var(--alarm)}
+.card.st-bosaltildi{opacity:.65}
+.card.st-bosaltildi::before{background:var(--muted)}
 .card:active{background:var(--surface2);transform:scale(.985)}
 .gauge{position:relative;flex:0 0 40px;height:78px;border-radius:5px 5px 8px 8px;border:2px solid var(--line);
   background:#EDF2F8;overflow:hidden}
@@ -185,6 +193,29 @@ textarea{min-height:110px;resize:vertical;font-family:ui-monospace,monospace;fon
 .dEtiket{font-family:var(--cond);font-size:11px;letter-spacing:.12em;color:var(--muted)}
 .dTarih{font-family:var(--cond);font-size:20px;font-weight:700;color:var(--mavi)}
 .raporListe{margin-top:6px}
+.dstat{display:flex;gap:9px;margin-bottom:10px}
+.dkart{flex:1;background:var(--surface);border:1px solid var(--line);border-radius:15px;padding:12px 10px;
+  text-align:center;box-shadow:var(--golge)}
+.dkart span{display:block;font-family:var(--cond);font-size:12.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.dkart b{display:block;font-family:var(--cond);font-size:28px;font-weight:700;color:var(--mavi);line-height:1.15}
+.dkart small{font-family:var(--cond);font-size:12px;color:var(--muted);letter-spacing:.06em}
+.dk-alarm b{color:var(--alarm)}
+.dk-hazir b{color:var(--yesil)}
+.uyari{background:rgba(220,38,71,.07);border:1px solid rgba(220,38,71,.25);border-radius:11px;
+  padding:10px 13px;margin-bottom:7px;font-size:13.5px;color:var(--ink)}
+.grafKutu{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:13px 14px;box-shadow:var(--golge)}
+.grafSatir{display:flex;align-items:center;gap:10px;margin-bottom:9px}
+.grafSatir:last-child{margin-bottom:0}
+.gAd{flex:0 0 105px;font-size:12.5px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.gBarDis{flex:1;height:14px;background:var(--surface2);border-radius:999px;overflow:hidden}
+.gBar{height:100%;background:linear-gradient(90deg,var(--mavi),var(--mavi2));border-radius:999px;min-width:4px}
+.gBarYesil{background:linear-gradient(90deg,var(--yesil),var(--yesil2))}
+.gDeger{flex:0 0 auto;font-family:var(--cond);font-size:14.5px;font-weight:700;color:var(--muted);min-width:52px;text-align:right}
+.dikeyGraf{display:flex;align-items:flex-end;gap:7px;height:130px;padding:13px 12px 8px}
+.dSutun{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;gap:3px}
+.dBar{width:100%;max-width:34px;background:linear-gradient(180deg,var(--mavi2),var(--mavi));border-radius:6px 6px 3px 3px;min-height:3px}
+.dVal{font-family:var(--cond);font-size:11.5px;font-weight:700;color:var(--muted)}
+.dGun{font-family:var(--cond);font-size:11px;color:var(--muted)}
 .gorevChips{margin-top:7px}
 .gorevChips .chip[aria-pressed="true"]{background:linear-gradient(135deg,var(--yesil),var(--yesil2));border-color:transparent;color:#fff}
 .gorevChips .chip[aria-pressed="true"] b{color:#fff}
@@ -532,25 +563,103 @@ function bugunBakimRaporu(){
   }
   return kayitlar;
 }
+function csvIndir(ad, satirlar){
+  const bom='\ufeff';
+  const icerik=bom+satirlar.map(r=>r.map(x=>('"'+String(x??'').replace(/"/g,'""')+'"')).join(';')).join('\n');
+  const blob=new Blob([icerik],{type:'text/csv;charset=utf-8'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob); a.download=ad;
+  document.body.appendChild(a); a.click(); a.remove();
+}
 function cizOzet(){
   document.getElementById('hdr').innerHTML=`
     <div class="top"><h1>Özet</h1><button class="icon" id="btnKilit">${yonetici?'🔓':'🔒'}</button></div>`;
   document.getElementById('btnKilit').onclick=yoneticiGirisi;
+  const bugun=bugunISO();
+  const bugunListe=isEmriUret(bugun);
+  const done=isemri[bugun]||{};
+  let gToplam=0, gBitti=0, tuzBugun=0;
+  bugunListe.forEach(x=>x.gorevler.forEach(k=>{
+    gToplam++; if(done[x.t.id+':'+k]) gBitti++;
+    if(k==='T') tuzBugun+=(x.tuzKg||0);
+  }));
+  const gecikenler=gecikenIsler(bugun,3);
+  const aktif=tanklar.filter(t=>!t.bosaltildi);
+  const hazirlar=aktif.filter(t=>durum(t)==='hazir');
+  const gecenler=aktif.filter(t=>durum(t)==='gecti');
   const kgToplam=toplamKg();
   const oz=urunOzeti();
   const rapor=bugunBakimRaporu();
+  // çalışan performansı (son 7 gün)
+  const perf={};
+  rapor.forEach(r=>{ perf[r.kisi]=(perf[r.kisi]||0)+1; });
+  const perfList=Object.entries(perf).sort((a,b)=>b[1]-a[1]);
+  const perfMax=perfList.length?perfList[0][1]:1;
+  // önümüzdeki 7 gün tuz ihtiyacı
+  const tuzGunler=[];
+  for(let i=0;i<7;i++){
+    const d=new Date(); d.setDate(d.getDate()+i);
+    const tar=d.toISOString().slice(0,10);
+    let kg=0; isEmriUret(tar).forEach(x=>{ if(x.tuzKg) kg+=x.tuzKg; });
+    tuzGunler.push({gun:kisaTarih(tar), kg});
+  }
+  const tuzMax=Math.max(1,...tuzGunler.map(x=>x.kg));
+  const ozMax=Math.max(1,...oz.map(([u,v])=>v.kg));
   const e=document.getElementById('ekran');
   e.innerHTML=`
-    <div class="sec">Stok Durumu</div>
-    <div class="ozetPanel">
-      ${oz.map(([u,v])=>`<div class="ozetSatir"><span class="ou">${u}</span><span class="oa">${v.adet} tank</span><span class="ok">${(v.kg/1000).toLocaleString('tr-TR',{maximumFractionDigits:1})} ton</span></div>`).join('')}
-      <div class="ozetSatir ozetTop"><span class="ou">TOPLAM</span><span class="oa">${tanklar.filter(t=>!t.bosaltildi).length} tank</span><span class="ok">${(kgToplam/1000).toLocaleString('tr-TR',{maximumFractionDigits:1})} ton</span></div>
+    <div class="dstat">
+      <div class="dkart ${gecikenler.length?'dk-alarm':''}"><span>Geciken</span><b>${gecikenler.length}</b><small>görev</small></div>
+      <div class="dkart"><span>Bugün</span><b>${gBitti}/${gToplam}</b><small>görev</small></div>
+      <div class="dkart ${hazirlar.length?'dk-hazir':''}"><span>Hazır</span><b>${hazirlar.length}</b><small>tank</small></div>
     </div>
+    <div class="dstat">
+      <div class="dkart"><span>Bugün Tuz</span><b>${tuzBugun}</b><small>kg</small></div>
+      <div class="dkart"><span>Stok</span><b>${(kgToplam/1000).toLocaleString('tr-TR',{maximumFractionDigits:1})}</b><small>ton</small></div>
+      <div class="dkart ${gecenler.length?'dk-alarm':''}"><span>Süre Geçen</span><b>${gecenler.length}</b><small>tank</small></div>
+    </div>
+    ${gecikenler.length||gecenler.length?`
+    <div class="sec" style="color:var(--alarm)">Uyarılar</div>
+    ${gecikenler.slice(0,5).map(x=>`<div class="uyari">⏰ ${x.t.kod} — ${GOREV[x.gorev]} · ${kisaTarih(x.tarih)}'den beri bekliyor</div>`).join('')}
+    ${gecenler.slice(0,5).map(t=>`<div class="uyari">🔴 ${t.kod} — ${gun(t)}. gün, hedef ${t.hedefGun} gündü (${t.urun||''})</div>`).join('')}
+    ${(gecikenler.length>5)?`<p class="hint">+${gecikenler.length-5} geciken görev daha — İş Emri'nde "Dünden Kalan" bölümünde</p>`:''}`:''}
+    <div class="sec">Stok Dağılımı</div>
+    <div class="grafKutu">
+      ${oz.map(([u,v])=>`
+        <div class="grafSatir">
+          <span class="gAd">${u}</span>
+          <div class="gBarDis"><div class="gBar" style="width:${Math.round(v.kg/ozMax*100)}%"></div></div>
+          <span class="gDeger">${(v.kg/1000).toLocaleString('tr-TR',{maximumFractionDigits:1})} t · ${v.adet}</span>
+        </div>`).join('')}
+    </div>
+    <div class="sec">7 Günlük Tuz İhtiyacı</div>
+    <div class="grafKutu dikeyGraf">
+      ${tuzGunler.map(x=>`
+        <div class="dSutun">
+          <span class="dVal">${x.kg||''}</span>
+          <div class="dBar" style="height:${Math.round(x.kg/tuzMax*100)}%"></div>
+          <span class="dGun">${x.gun}</span>
+        </div>`).join('')}
+    </div>
+    ${perfList.length?`
+    <div class="sec">Çalışan Performansı<small style="float:right;font-size:12px">son 7 gün, onay sayısı</small></div>
+    <div class="grafKutu">
+      ${perfList.map(([ad,n])=>`
+        <div class="grafSatir">
+          <span class="gAd">${ad}</span>
+          <div class="gBarDis"><div class="gBar gBarYesil" style="width:${Math.round(n/perfMax*100)}%"></div></div>
+          <span class="gDeger">${n}</span>
+        </div>`).join('')}
+    </div>`:''}
     <div class="sec">Yapılan Bakımlar<small style="float:right;font-size:12px">son 7 gün</small></div>
-    ${rapor.length?`<button class="btn ghost" id="raporPay">Raporu Paylaş</button>
-      <div class="raporListe">${rapor.map(r=>`
+    ${rapor.length?`
+      <div class="two">
+        <button class="btn ghost" id="raporPay">Paylaş</button>
+        <button class="btn ghost" id="raporCsv">Excel (CSV)</button>
+      </div>
+      <div class="raporListe">${rapor.slice(0,15).map(r=>`
         <div class="log"><span class="d">${kisaTarih(r.tarih)}</span>
         <span class="v">${r.kod} · ${r.gorev}<span class="n">${r.kisi} · ${r.saat}</span></span></div>`).join('')}
+      ${rapor.length>15?`<p class="hint">+${rapor.length-15} kayıt daha CSV'de</p>`:''}
       </div>`:'<p class="hint">Son 7 günde onaylanmış bakım kaydı yok.</p>'}
   `;
   if(document.getElementById('raporPay')){
@@ -559,6 +668,14 @@ function cizOzet(){
       rapor.forEach(r=>{ m+=`${kisaTarih(r.tarih)} · ${r.kod} · ${r.gorev} — ${r.kisi} ${r.saat}\n`; });
       if(navigator.share) navigator.share({text:m}).catch(()=>{});
       else if(navigator.clipboard) navigator.clipboard.writeText(m).then(()=>toast('Panoya kopyalandı'));
+    };
+  }
+  if(document.getElementById('raporCsv')){
+    document.getElementById('raporCsv').onclick=()=>{
+      const satirlar=[['Tarih','Tank','Ürün','Görev','Yapan','Saat']];
+      rapor.forEach(r=>satirlar.push([r.tarih,r.kod,r.urun,r.gorev,r.kisi,r.saat]));
+      csvIndir('bakim-raporu-'+bugunISO()+'.csv', satirlar);
+      toast('CSV indirildi');
     };
   }
 }
@@ -626,7 +743,7 @@ function cizTanklar(){
     const yuzde=Math.max(6,Math.min(100,Math.round(g/ +t.hedefGun*100)));
     const gcls=d==='gecti'?'g-late':(d==='yakin'||d==='hazir')?'g-warn':'';
     const son=(t.olcumler||[])[0];
-    return `<button class="card" data-id="${t.id}">
+    return `<button class="card st-${d}" data-id="${t.id}">
       <div class="gauge ${gcls}"><div class="cap"></div><div class="fill" style="height:${yuzde}%"></div><div class="gday">${g}</div></div>
       <div class="info">
         <div class="row1"><span class="kod">${t.kod}</span><span class="kap">${t.kapasite||''}</span></div>
@@ -1008,6 +1125,51 @@ function form(id){
   };
 }
 
+function kalanMetin(t){
+  const hedef=new Date(t.baslangic+'T00:00');
+  hedef.setDate(hedef.getDate()+(+t.hedefGun-1));
+  const fark=hedef-new Date();
+  const gunF=Math.floor(Math.abs(fark)/86400000);
+  const saatF=Math.floor((Math.abs(fark)%86400000)/3600000);
+  if(fark>=0) return `${gunF} gün ${saatF} saat kaldı`;
+  return `${gunF} gün ${saatF} saat geçti`;
+}
+function phGrafik(t){
+  const veriler=(t.olcumler||[]).filter(o=>o.ph).slice(0,10).reverse();
+  if(veriler.length<2) return '';
+  const phs=veriler.map(o=>+o.ph);
+  const min=Math.min(...phs)-0.2, max=Math.max(...phs)+0.2;
+  const W=300,H=80,P=6;
+  const nokta=phs.map((v,i)=>{
+    const x=P+i*(W-2*P)/(phs.length-1);
+    const y=H-P-(v-min)/(max-min)*(H-2*P);
+    return x.toFixed(1)+','+y.toFixed(1);
+  });
+  return `<div class="sec">pH Eğrisi<small style="float:right;font-size:12px">son ${phs.length} ölçüm</small></div>
+  <div class="grafKutu" style="padding:8px">
+    <svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block">
+      <polyline points="${nokta.join(' ')}" fill="none" stroke="var(--mavi)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+      ${nokta.map((n,i)=>`<circle cx="${n.split(',')[0]}" cy="${n.split(',')[1]}" r="3.2" fill="var(--mavi)"/>`).join('')}
+    </svg>
+    <div style="display:flex;justify-content:space-between;font-family:var(--cond);font-size:12px;color:var(--muted);padding:0 4px">
+      <span>${kisaTarih(veriler[0].tarih)} · ${phs[0]}</span>
+      <span>${kisaTarih(veriler[veriler.length-1].tarih)} · ${phs[phs.length-1]}</span>
+    </div>
+  </div>`;
+}
+function tankBakimGecmisi(t, adet){
+  const out=[];
+  Object.entries(isemri).forEach(([tarih,gunKayit])=>{
+    Object.entries(gunKayit).forEach(([key,v])=>{
+      if(key.startsWith(t.id+':')){
+        const kodG=key.slice(t.id.length+1);
+        out.push({tarih, gorev:GOREV[kodG]||kodG, kisi:(v&&v.k)||'', saat:(v&&v.s)||''});
+      }
+    });
+  });
+  out.sort((a,b)=>b.tarih.localeCompare(a.tarih));
+  return out.slice(0,adet||10);
+}
 function detay(id){
   const t=tanklar.find(x=>x.id===id); if(!t) return;
   const g=gun(t), d=durum(t), kalan=+t.hedefGun-g;
@@ -1022,7 +1184,7 @@ function detay(id){
     </div>
     <div class="stat">
       <div><span>Gün</span><b>${g}/${t.hedefGun}</b></div>
-      <div><span>${kalan>=0?'Kalan':'Aşım'}</span><b>${Math.abs(kalan)}</b></div>
+      <div><span>${kalan>=0?'Kalan':'Aşım'}</span><b style="font-size:16px;line-height:1.3;padding-top:4px;display:block">${kalanMetin(t)}</b></div>
       <div><span>Dolum</span><b>${kisaTarih(t.baslangic)}</b></div>
     </div>
     ${t.notlar?`<p class="hint">${t.notlar}</p>`:''}
@@ -1038,6 +1200,10 @@ function detay(id){
     ${(t.kimyasallar||[]).length?`<h3>Kimyasal geçmişi</h3>`+t.kimyasallar.map(x=>`
       <div class="log"><span class="d">${kisaTarih(x.tarih)}</span>
       <span class="v">${x.ad}${x.miktar?` <em>· ${x.miktar}</em>`:''}<span class="n">${x.k||''}${x.s?' · '+x.s:''}</span></span></div>`).join(''):''}
+    ${phGrafik(t)}
+    ${(()=>{const bg=tankBakimGecmisi(t,8);return bg.length?`<h3>Bakım geçmişi</h3>`+bg.map(b=>`
+      <div class="log"><span class="d">${kisaTarih(b.tarih)}</span>
+      <span class="v">${b.gorev}<span class="n">${b.kisi}${b.saat?' · '+b.saat:''}</span></span></div>`).join(''):''})()}
     <h3>Ölçüm geçmişi</h3>
     ${(t.olcumler||[]).length?t.olcumler.map(o=>`
       <div class="log"><span class="d">${kisaTarih(o.tarih)}</span>
@@ -1048,7 +1214,9 @@ function detay(id){
     <button class="btn ghost" id="duzenle">Tankı düzenle</button>
     ${t.bosaltildi
       ?`<button class="btn ghost" id="geriac">Boşaltmayı geri al</button><p class="hint">Boşaltma: ${kisaTarih(t.bosaltildi)}${t.bosaltan?` · ${t.bosaltan}${t.bosaltmaSaat?' · '+t.bosaltmaSaat:''}`:''}</p>`
-      :`<button class="btn" id="bosalt">Tankı boşalt</button>`}
+      :`${durum(t)!=='hazir'&&durum(t)!=='gecti'?`<button class="btn ghost" id="erkenBitir">Erken Hazır İşaretle</button>`:''}
+        ${t.erkenBitiren?`<p class="hint">Erken hazır: ${t.erkenBitiren} · ${kisaTarih(t.erkenTarih||t.baslangic)}</p>`:''}
+        <button class="btn" id="bosalt">Tankı boşalt</button>`}
     <button class="btn danger" id="sil">Tankı sil</button>`:''}
   `);
   const q=s=>p.querySelector(s);
@@ -1059,6 +1227,19 @@ function detay(id){
       if(!o.ph&&!o.tuz&&!o.sicaklik&&!o.not) return;
       (t.olcumler=t.olcumler||[]).unshift(o);
       await sSet(K_TANK,tanklar); detay(id); toast('Ölçüm kaydedildi');
+    };
+    const eb=q('#erkenBitir');
+    if(eb) eb.onclick=async()=>{
+      const onay=await onayDialog(t.kod+' — Erken Hazır',
+        t.urun+' şu an '+gun(t)+'. günde (hedef '+t.hedefGun+' gündü).\nFermantasyon erken tamamlandı olarak işaretlensin mi? Tank "Hazır" durumuna geçer.',
+        'Hazır İşaretle');
+      if(!onay) return;
+      t.hedefGun=gun(t);
+      t.erkenBitiren=kullaniciAdi();
+      t.erkenTarih=bugunISO();
+      await sSet(K_TANK,tanklar);
+      detay(id);
+      toast(t.kod+' hazır olarak işaretlendi');
     };
     q('#bosalt').onclick=async()=>{t.bosaltildi=bugunISO();await sSet(K_TANK,tanklar);kapat();ciz();toast(t.kod+' boşaltıldı');};
   }else{
@@ -1436,7 +1617,9 @@ function cizTankIsEmri(kod){
         <div class="meta">
           <span class="pill ${SINIF[d]}">${ETIKET[d]}</span>
           <span class="pill">${g}/${t.hedefGun} gün</span>
+          <span class="pill">Dolum ${kisaTarih(t.baslangic)}</span>
         </div>
+        ${(()=>{const sb=tankBakimGecmisi(t,1)[0];return sb?`<p class="hint" style="margin:7px 0 0">Son bakım: ${sb.gorev} · ${kisaTarih(sb.tarih)}${sb.kisi?' · '+sb.kisi:''}</p>`:'';})()}
       </div>
     </div>
     ${(!bugunProg||!bugunProg.g.length)?`<div class="empty"><b>Bugün görev yok</b>Bu tank için bugüne tanımlı bir iş bulunmuyor.</div>`:`
