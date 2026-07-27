@@ -1625,17 +1625,47 @@ function cizTankIsEmri(kod){
     ${(!bugunProg||!bugunProg.g.length)?`<div class="empty"><b>Bugün görev yok</b>Bu tank için bugüne tanımlı bir iş bulunmuyor.</div>`:`
     <div class="grup">
       <h3>Bugünün İşi<small>${g}. gün</small></h3>
-      ${bugunProg.g.map(k=>{
-        const key=t.id+':'+k, ok=!!done[key];
-        const tuzKg=k==='T'?(bugunProg.tuz&&bugunProg.tuz[seri(t)]):null;
-        return `<button class="gorev qrgorev ${ok?'ok':''}" data-key="${key}">
-          <span class="cb"></span>
-          <span class="gd"><b class="qrad">${GOREV[k]}</b>
-            ${tuzKg?`<span class="kgrozet">${tuzKg} kg</span>`:''}
-            ${(k==='D'||k==='D2'||k==='DV')&&devSure(t)?`<span class="kgrozet" style="background:linear-gradient(135deg,var(--yesil),var(--yesil2))">${devirdaimSure[seri(t)]} saat</span>`:''}
-            ${ok&&done[key]&&done[key].k?`<span class="n">✓ ${done[key].k} · ${done[key].s||''}</span>`:`<span class="n">Dokun ve onayla</span>`}</span>
-        </button>`;
-      }).join('')}
+      ${(()=>{
+        const devK=bugunProg.g.filter(k=>k==='D'||k==='D2'||k==='DV');
+        const tuzK=bugunProg.g.filter(k=>k==='T');
+        const digerK=bugunProg.g.filter(k=>k!=='T'&&k!=='D'&&k!=='D2'&&k!=='DV');
+        let html='';
+        // Devirdaim — ayrı
+        devK.forEach(k=>{
+          const key=t.id+':'+k, ok=!!done[key];
+          html+=`<button class="gorev qrgorev ${ok?'ok':''}" data-key="${key}">
+            <span class="cb"></span>
+            <span class="gd"><b class="qrad">${GOREV[k]}</b>
+              ${devSure(t)?`<span class="kgrozet" style="background:linear-gradient(135deg,var(--yesil),var(--yesil2))">${devirdaimSure[seri(t)]} saat</span>`:''}
+              ${ok&&done[key]&&done[key].k?`<span class="n">✓ ${done[key].k} · ${done[key].s||''}</span>`:`<span class="n">Dokun ve onayla</span>`}</span>
+          </button>`;
+        });
+        // Tuz — ayrı
+        tuzK.forEach(k=>{
+          const key=t.id+':'+k, ok=!!done[key];
+          const tuzKg=bugunProg.tuz&&bugunProg.tuz[seri(t)];
+          html+=`<button class="gorev qrgorev ${ok?'ok':''}" data-key="${key}">
+            <span class="cb"></span>
+            <span class="gd"><b class="qrad">${GOREV[k]}</b>
+              ${tuzKg?`<span class="kgrozet">${tuzKg} kg</span>`:''}
+              ${ok&&done[key]&&done[key].k?`<span class="n">✓ ${done[key].k} · ${done[key].s||''}</span>`:`<span class="n">Dokun ve onayla</span>`}</span>
+          </button>`;
+        });
+        // Diğer işler — tek paket
+        if(digerK.length){
+          const keys=digerK.map(k=>t.id+':'+k);
+          const hepsiOk=keys.every(key=>!!done[key]);
+          const ilkDone=done[keys[0]];
+          const adlar=digerK.map(k=>GOREV[k]).join(' + ');
+          html+=`<button class="gorev qrgorev ${hepsiOk?'ok':''}" data-keys="${keys.join(',')}">
+            <span class="cb"></span>
+            <span class="gd"><b class="qrad">${adlar}</b>
+              ${digerK.length>1?`<span class="kgrozet" style="background:linear-gradient(135deg,var(--mavi),var(--mavi2))">${digerK.length} iş birlikte</span>`:''}
+              ${hepsiOk&&ilkDone&&ilkDone.k?`<span class="n">✓ ${ilkDone.k} · ${ilkDone.s||''}</span>`:`<span class="n">Dokun ve onayla</span>`}</span>
+          </button>`;
+        }
+        return html;
+      })()}
     </div>`}
     ${(t.olcumler||[]).length?`
     <div class="grup">
@@ -1694,14 +1724,19 @@ function cizTankIsEmri(kod){
     }
     const b=ev.target.closest('.gorev'); if(!b) return;
     const d2=isemri[bugun]=isemri[bugun]||{};
-    const yapildiMi=!!d2[b.dataset.key];
+    const keys=b.dataset.keys? b.dataset.keys.split(',') : [b.dataset.key];
+    const yapildiMi=keys.every(key=>!!d2[key]);
     const baslik=b.querySelector('.gd b')?.textContent||'';
+    const coklu=keys.length>1;
     const onay=yapildiMi
-      ? await onayDialog(baslik, 'Bu görevin onayını geri almak istiyor musun?', 'Geri Al')
-      : await onayDialog(baslik, 'Bu görev yapıldı mı?', 'Onayla');
+      ? await onayDialog(baslik, coklu?'Bu işlerin (hepsinin) onayını geri almak istiyor musun?':'Bu görevin onayını geri almak istiyor musun?', 'Geri Al')
+      : await onayDialog(baslik, coklu?'Bu işlerin hepsi yapıldı mı? Tek onayla '+keys.length+' iş işaretlenecek.':'Bu görev yapıldı mı?', 'Onayla');
     if(!onay) return;
-    if(yapildiMi) delete d2[b.dataset.key];
-    else d2[b.dataset.key]={k:kullaniciAdi(), s:saatSimdi()};
+    if(yapildiMi){ keys.forEach(key=>delete d2[key]); }
+    else{
+      const ad=kullaniciAdi(), sa=saatSimdi();
+      keys.forEach(key=>{ d2[key]={k:ad, s:sa}; });
+    }
     await sSet(K_IS,isemri);
     cizTankIsEmri(kod);
     toast('Kaydedildi');
