@@ -210,6 +210,11 @@ textarea{min-height:110px;resize:vertical;font-family:ui-monospace,monospace;fon
 .erkenPill{background:linear-gradient(135deg,#D97706,#F59E0B);color:#fff;border-color:transparent;font-weight:700;letter-spacing:.06em}
 .dk-erken b{color:var(--amber)}
 .dk-erken{border-color:rgba(217,119,6,.45);background:linear-gradient(135deg,#FFFFFF 40%,#FFF7E8)}
+.miniBtn{float:right;margin-left:6px;background:var(--surface2);border:1px solid var(--line);border-radius:8px;
+  padding:3px 10px;font-family:var(--cond);font-size:13px;color:var(--mavi);letter-spacing:.04em}
+.miniSil{color:var(--alarm)}
+.dipPill{background:linear-gradient(135deg,#92400E,#B45309);color:#fff;border-color:transparent;font-weight:700}
+.temizPill{background:linear-gradient(135deg,var(--mavi),var(--mavi2));color:#fff;border-color:transparent;font-weight:700}
 .erkenBanner{width:100%;display:flex;align-items:center;gap:12px;text-align:left;
   background:linear-gradient(135deg,#FFF4E0,#FFE9C7);border:2px solid var(--amber);border-radius:15px;
   padding:13px 15px;margin-bottom:12px;box-shadow:0 4px 14px rgba(217,119,6,.18)}
@@ -291,6 +296,7 @@ textarea{min-height:110px;resize:vertical;font-family:ui-monospace,monospace;fon
    adresini yapıştır (örn: 'https://tank-takip-default-rtdb.firebaseio.com').
    Boş bırakılırsa uygulama sadece bu telefonda çalışır (eski davranış). */
 const FIREBASE_URL = 'https://tank-takip-default-rtdb.firebaseio.com';
+const K_PERSONEL='tanktakip:personel', K_AD_KILIT='tanktakip:cihazKilit';
 const K_TANK='tanktakip:tanklar', K_PROG='tanktakip:programv2', K_IS='tanktakip:isemri', K_VERI='tanktakip:veriYuklendi', K_DEV='tanktakip:devirdaimSure';
 const DEV_VARSAYILAN={A:'2+2',B:'2+2',C:'2+2',D:'1+1',E:'1+1'};
 let devirdaimSure={...DEV_VARSAYILAN};
@@ -334,14 +340,27 @@ async function sSet(k,v){
   try{ localStorage.setItem(k,s); }catch(e){}
 }
 const K_AD='tanktakip:kullaniciAdi';
+let personel=[];
+function cihazSahibi(){
+  try{ return localStorage.getItem(K_AD)||''; }catch(e){ return ''; }
+}
+function cihazAtandiMi(){
+  try{ return localStorage.getItem(K_AD_KILIT)==='1' && !!cihazSahibi(); }catch(e){ return false; }
+}
 function kullaniciAdi(){
-  let ad='';
-  try{ ad=localStorage.getItem(K_AD)||''; }catch(e){}
-  if(!ad){
-    ad=(prompt('Adın ne? (onaylarda görünecek)')||'').trim();
-    if(ad){ try{ localStorage.setItem(K_AD,ad); }catch(e){} }
-  }
-  return ad||'?';
+  const ad=cihazSahibi();
+  if(ad) return ad;
+  if(personel.length) return '';   // liste var ama cihaz atanmamış → onay engellenir
+  const y=(prompt('Adın ne? (onaylarda görünecek)')||'').trim();
+  if(y){ try{ localStorage.setItem(K_AD,y); }catch(e){} }
+  return y||'?';
+}
+function onayYetkisi(){
+  if(cihazAtandiMi()) return true;
+  if(!personel.length) return true;           // personel listesi tanımlı değilse eski davranış
+  if(yonetici) return true;                   // yönetici her zaman
+  toast('Bu cihaz bir personele atanmamış — yöneticiye bildir');
+  return false;
 }
 function saatSimdi(){
   const d=new Date();
@@ -358,8 +377,9 @@ function canliSenkronBaslat(){
   if(!FIREBASE_URL) return;
   setInterval(async()=>{
     if(document.getElementById('panel')) return; // düzenleme sırasında araya girme
-    const [t,p,i,dv]=await Promise.all([fbGet(K_TANK),fbGet(K_PROG),fbGet(K_IS),fbGet(K_DEV)]);
+    const [t,p,i,dv,pe]=await Promise.all([fbGet(K_TANK),fbGet(K_PROG),fbGet(K_IS),fbGet(K_DEV),fbGet(K_PERSONEL)]);
     if(dv!==undefined) devirdaimSure=dv;
+    if(pe!==undefined) personel=pe;
     let degisti=false;
     if(t!==undefined && JSON.stringify(t)!==JSON.stringify(tanklar)){ tanklar=t; degisti=true; }
     if(p!==undefined && JSON.stringify(p)!==JSON.stringify(program)){ program=p; degisti=true; }
@@ -466,15 +486,15 @@ const gun=t=>gunTarihte(t,t.bosaltildi||bugunISO());
 const seri=t=>(t.kod.match(/^[A-ZÇĞİÖŞÜ]/)||[''])[0];
 const urunler=()=>Object.keys(program);
 function durum(t){
-  if(t.bosaltildi) return 'bosaltildi';
+  if(t.bosaltildi) return t.temizlendi? 'temiz' : 'dip';
   const g=gun(t),h=+t.hedefGun;
   if(g>h+3) return 'gecti';
   if(g>=h) return 'hazir';
   if(g>=h-2) return 'yakin';
   return 'devam';
 }
-const ETIKET={devam:'Fermente',yakin:'Yaklaşıyor',hazir:'Hazır',gecti:'Süre geçti',bosaltildi:'Boşaltıldı'};
-const SINIF={devam:'on-time',yakin:'soon',hazir:'ready',gecti:'late',bosaltildi:''};
+const ETIKET={devam:'Fermente',yakin:'Yaklaşıyor',hazir:'Hazır',gecti:'Süre geçti',dip:'Dip · Temizlenecek',temiz:'Temiz · Boş'};
+const SINIF={devam:'on-time',yakin:'soon',hazir:'ready',gecti:'late',dip:'dipPill',temiz:'temizPill'};
 function toast(m){const d=document.createElement('div');d.className='toast';d.textContent=m;
   document.body.appendChild(d);setTimeout(()=>d.remove(),1700);}
 
@@ -790,9 +810,9 @@ function toplamKg(){
   return Math.round(kg);
 }
 function cizTanklar(){
-  const say={hepsi:0,hazir:0,yakin:0,gecti:0,bosaltildi:0,erken:0};
+  const say={hepsi:0,hazir:0,yakin:0,gecti:0,dip:0,temiz:0,erken:0};
   tanklar.forEach(t=>{
-    if(t.bosaltildi){say.bosaltildi++;return;}
+    if(t.bosaltildi){ if(t.temizlendi) say.temiz++; else say.dip++; return;}
     say.hepsi++; const d=durum(t); if(say[d]!==undefined) say[d]++;
     if(t.erkenBitiren) say.erken++;
   });
@@ -800,7 +820,7 @@ function cizTanklar(){
   document.getElementById('hdr').innerHTML=`
     <div class="top"><h1>Tanklar</h1><button class="icon" id="btnOkut">Okut</button>${yonetici?'<button class="icon" id="btnQR">QR</button><button class="icon" id="btnHizli">Hızlı Ekle</button>'+(veriYuklendi?'':'<button class="icon" id="btnVeri">Veri Yükle</button>')+'<button class="icon" id="btnYedek">Yedek</button>':''}<button class="icon" id="btnKilit">${yonetici?'🔓':'🔒'}</button></div>
     <input id="ara" placeholder="Tank ara: A-14, biber…" value="${arama}" autocomplete="off">
-    <div class="chips">${[['hepsi','Aktif'],['erken','⬇ Erken'],['hazir','Hazır'],['yakin','Yaklaşan'],['gecti','Geçen'],['bosaltildi','Boşaltılan']]
+    <div class="chips">${[['hepsi','Aktif'],['erken','⬇ Erken'],['hazir','Hazır'],['yakin','Yaklaşan'],['gecti','Geçen'],['dip','🧽 Temizlenecek'],['temiz','✓ Temiz']]
       .map(([k,ad])=>`<button class="chip" data-f="${k}" aria-pressed="${filtre===k}">${ad}<b>${say[k]||0}</b></button>`).join('')}`;
   document.getElementById('btnKilit').onclick=yoneticiGirisi;
   document.getElementById('btnOkut').onclick=qrOku;
@@ -818,13 +838,14 @@ function cizTanklar(){
   const q=arama.trim().toLocaleLowerCase('tr');
   let liste=tanklar.filter(t=>{
     if(q && !((t.kod+' '+(t.urun||'')).toLocaleLowerCase('tr').includes(q))) return false;
-    if(filtre==='bosaltildi') return !!t.bosaltildi;
+    if(filtre==='dip') return !!t.bosaltildi && !t.temizlendi;
+    if(filtre==='temiz') return !!t.bosaltildi && !!t.temizlendi;
     if(t.bosaltildi) return false;
     if(filtre==='hepsi') return true;
     if(filtre==='erken') return !!t.erkenBitiren;
     return durum(t)===filtre;
   });
-  const sira={gecti:0,hazir:1,yakin:2,devam:3,bosaltildi:4};
+  const sira={gecti:0,hazir:1,yakin:2,devam:3,dip:4,temiz:5};
   liste.sort((a,b)=>(b.erkenBitiren?1:0)-(a.erkenBitiren?1:0)||sira[durum(a)]-sira[durum(b)]||a.kod.localeCompare(b.kod,'tr',{numeric:true}));
 
   document.getElementById('ekran').innerHTML = liste.length ? liste.map(t=>{
@@ -985,6 +1006,7 @@ function cizIsEmri(){
       return;
     }
     const g=ev.target.closest('.gorev'); if(!g) return;
+    if(!onayYetkisi()) return;
     const hedefTarih=g.dataset.tarih||ieTarih;
     const d=isemri[hedefTarih]=isemri[hedefTarih]||{};
     const yapildiMi=!!d[g.dataset.key];
@@ -1074,7 +1096,46 @@ function cizProgram(){
   <div class="tuzgrid">${['A','B','C','D','E'].map(s=>
     `<div><label>${s}</label><input id="dv${s}" value="${devirdaimSure[s]||''}" placeholder="2+2" ${yonetici?'':'disabled'}></div>`).join('')}</div>
   ${yonetici?`<button class="btn ghost" id="dvKaydet">Süreleri Kaydet</button>`:''}
+  <div class="sec">Personel &amp; Cihaz</div>
+  <div class="grafKutu">
+    <p class="hint" style="margin:0 0 8px">Bu cihaz: <b style="color:var(--ink)">${cihazSahibi()||'atanmamış'}</b>${cihazAtandiMi()?' (kilitli)':''}</p>
+    ${personel.length?personel.map(ad=>`<div class="istSatir"><b>${ad}</b>
+      ${yonetici?`<button class="miniBtn" data-ata="${ad}">Bu cihaza ata</button><button class="miniBtn miniSil" data-sil="${ad}">Sil</button>`:''}</div>`).join('')
+      :'<p class="hint" style="margin:0">Personel tanımlı değil — liste boşken herkes onay verebilir.</p>'}
+    ${yonetici?`<button class="btn ghost" id="persEkle" style="margin-top:10px">+ Personel Ekle</button>`:''}
+  </div>
   <p class="hint">Seri harfi = tank kodunun ilk harfi (A–E). Tuz kg değerleri ve devirdaim süreleri seriye göre uygulanır.</p>`;
+  const pk=document.querySelector('.grafKutu');
+  if(yonetici && pk){
+    pk.onclick=async ev=>{
+      const ata=ev.target.closest('[data-ata]');
+      if(ata){
+        const ad=ata.dataset.ata;
+        const ok=await onayDialog('Cihaz Ataması', 'Bu telefon "'+ad+'" olarak kilitlenecek. Tüm onaylar bu isimle kaydedilir.', 'Ata');
+        if(!ok) return;
+        try{ localStorage.setItem(K_AD,ad); localStorage.setItem(K_AD_KILIT,'1'); }catch(e){}
+        cizProgram(); toast('Cihaz '+ad+' olarak atandı');
+        return;
+      }
+      const sil=ev.target.closest('[data-sil]');
+      if(sil){
+        const ad=sil.dataset.sil;
+        const ok=await onayDialog('Personel Sil', ad+' listeden çıkarılsın mı?', 'Sil');
+        if(!ok) return;
+        personel=personel.filter(x=>x!==ad);
+        await sSet(K_PERSONEL,personel); cizProgram(); toast(ad+' silindi');
+      }
+    };
+  }
+  if(yonetici && document.getElementById('persEkle')){
+    document.getElementById('persEkle').onclick=async()=>{
+      const ad=await girdiDialog('Personel Ekle','Onay verebilecek kişinin adı.','Örn: Gökhan');
+      if(!ad) return;
+      if(personel.includes(ad)){ toast('Zaten listede'); return; }
+      personel.push(ad);
+      await sSet(K_PERSONEL,personel); cizProgram(); toast(ad+' eklendi');
+    };
+  }
   if(yonetici && document.getElementById('dvKaydet')){
     document.getElementById('dvKaydet').onclick=async()=>{
       ['A','B','C','D','E'].forEach(s=>{
@@ -1313,8 +1374,9 @@ function detay(id){
     <button class="btn ghost" id="duzenle">Tankı düzenle</button>
     ${t.bosaltildi
       ?`<button class="btn ghost" id="geriac">Boşaltmayı geri al</button><p class="hint">Boşaltma: ${kisaTarih(t.bosaltildi)}${t.bosaltan?` · ${t.bosaltan}${t.bosaltmaSaat?' · '+t.bosaltmaSaat:''}`:''}</p>`
-      :`${durum(t)!=='hazir'&&durum(t)!=='gecti'?`<button class="btn ghost" id="erkenBitir">Erken Hazır İşaretle</button>`:''}
-        ${t.erkenBitiren?`<p class="hint">Erken hazır: ${t.erkenBitiren} · ${kisaTarih(t.erkenTarih||t.baslangic)}</p>`:''}
+      :`${!t.erkenBitiren&&durum(t)!=='hazir'&&durum(t)!=='gecti'?`<button class="btn ghost" id="erkenBitir">Erken Hazır İşaretle</button>`:''}
+        ${t.erkenBitiren?`<button class="btn ghost" id="erkenGeriAl">⬇ Erken Hazır'ı Geri Al</button>
+          <p class="hint">Erken hazır: ${t.erkenBitiren} · ${kisaTarih(t.erkenTarih||t.baslangic)}${t.hedefGunAsil?` · asıl hedef ${t.hedefGunAsil} gün`:''}</p>`:''}
         <button class="btn" id="bosalt">Tankı boşalt</button>`}
     <button class="btn danger" id="sil">Tankı sil</button>`:''}
   `);
@@ -1333,12 +1395,22 @@ function detay(id){
         t.urun+' şu an '+gun(t)+'. günde (hedef '+t.hedefGun+' gündü).\nFermantasyon erken tamamlandı olarak işaretlensin mi? Tank "Hazır" durumuna geçer.',
         'Hazır İşaretle');
       if(!onay) return;
+      if(!t.hedefGunAsil) t.hedefGunAsil=t.hedefGun;
       t.hedefGun=gun(t);
       t.erkenBitiren=kullaniciAdi();
       t.erkenTarih=bugunISO();
       await sSet(K_TANK,tanklar);
       detay(id);
       toast(t.kod+' hazır olarak işaretlendi');
+    };
+    const ega=q('#erkenGeriAl');
+    if(ega) ega.onclick=async()=>{
+      const ok=await onayDialog(t.kod+" — Erken Hazır'ı Geri Al",
+        'Tank yeniden fermantasyona döner. Hedef gün '+(t.hedefGunAsil||t.hedefGun)+' güne geri alınacak.', 'Geri Al');
+      if(!ok) return;
+      if(t.hedefGunAsil){ t.hedefGun=t.hedefGunAsil; delete t.hedefGunAsil; }
+      delete t.erkenBitiren; delete t.erkenTarih;
+      await sSet(K_TANK,tanklar); detay(id); toast(t.kod+' yeniden aktif');
     };
     q('#bosalt').onclick=async()=>{t.bosaltildi=bugunISO();await sSet(K_TANK,tanklar);kapat();ciz();toast(t.kod+' boşaltıldı');};
   }else{
@@ -1447,7 +1519,14 @@ function hizliOnizleGoster(p, satirlarMetin){
       if(x.eylem==='dolum'){
         const veri={kod:x.kod, urun:x.urun, kapasite:x.miktar?(x.miktar+' kg'):'',
           baslangic:bugun, hedefGun:hedefGunHesapla(x.urun), notlar:''};
-        if(t){ Object.assign(t,veri); }
+        const bosOlan = t || tanklar.find(tk=>tk.kod===x.kod&&tk.bosaltildi);
+        if(bosOlan){
+          Object.assign(bosOlan,veri);
+          delete bosOlan.bosaltildi; delete bosOlan.bosaltan; delete bosOlan.bosaltmaSaat;
+          delete bosOlan.temizlendi; delete bosOlan.temizleyen; delete bosOlan.temizlikSaat;
+          delete bosOlan.erkenBitiren; delete bosOlan.erkenTarih; delete bosOlan.hedefGunAsil;
+          bosOlan.olcumler=[]; bosOlan.kimyasallar=[];
+        }
         else{ tanklar.push({id:'t'+Date.now()+'_'+Math.random().toString(36).slice(2,7),...veri,bosaltildi:'',olcumler:[]}); }
         dolum++;
       }else if(!t){
@@ -1713,7 +1792,19 @@ function cizTankIsEmri(kod){
           ${t.bosaltan?`<span class="pill">${t.bosaltan}</span>`:''}</div>
         </div>
       </div>
-      <div class="empty"><b>Bu tank boşaltıldı</b>${g} gün fermente edildi. Yeni dolum yapıldıysa yöneticiye bildir.</div>`;
+      ${t.temizlendi
+        ?`<div class="empty"><b>✓ Tank temiz</b>${kisaTarih(t.temizlendi)}${t.temizleyen?' · '+t.temizleyen:''} — yeni dolum için hazır.</div>`
+        :`<div class="empty" style="border-color:var(--amber)"><b>Dip · Temizlenecek</b>${g} gün fermente edildi, ${kisaTarih(t.bosaltildi)}'de boşaltıldı.</div>
+          <button class="btn" id="qrTemiz">Temizlik Yapıldı</button>`}`;
+      const tb2=e.querySelector('#qrTemiz');
+      if(tb2) tb2.onclick=async()=>{
+        if(!onayYetkisi()) return;
+        const ok=await onayDialog(t.kod+' — Temizlik',
+          'Tank dibi temizlendi mi? Temiz listesine geçecek.','Temizlendi');
+        if(!ok) return;
+        t.temizlendi=bugunISO(); t.temizleyen=kullaniciAdi(); t.temizlikSaat=saatSimdi();
+        await sSet(K_TANK,tanklar); cizTankIsEmri(kod); toast(t.kod+' temiz');
+      };
     return;
   }
   e.innerHTML=`
@@ -1802,6 +1893,7 @@ function cizTankIsEmri(kod){
   `;
   const bosaltBtn=e.querySelector('#qrBosalt');
   if(bosaltBtn) bosaltBtn.onclick=async()=>{
+    if(!onayYetkisi()) return;
     const onay=await onayDialog(t.kod+' — Tankı Boşalt',
       t.urun+' · '+g+'. gün\nBu tank boşaltıldı mı? İşlem kaydedilecek.', 'Boşalt');
     if(!onay) return;
@@ -1815,6 +1907,7 @@ function cizTankIsEmri(kod){
   e.onclick=async ev=>{
     const kb=ev.target.closest('.kimBtn');
     if(kb){
+      if(!onayYetkisi()) return;
       let ad=kb.dataset.kim;
       if(ad==='__diger__'){
         ad=await girdiDialog('Kimyasal adı','Program dışı eklediğin maddeyi yaz.','Örn: Kalsiyum klorür');
@@ -1831,6 +1924,7 @@ function cizTankIsEmri(kod){
       return;
     }
     const b=ev.target.closest('.gorev'); if(!b) return;
+    if(!onayYetkisi()) return;
     const d2=isemri[bugun]=isemri[bugun]||{};
     const keys=b.dataset.keys? b.dataset.keys.split(',') : [b.dataset.key];
     const yapildiMi=keys.every(key=>!!d2[key]);
@@ -1922,6 +2016,7 @@ function yedek(){
   isemri=await sGet(K_IS,{});
   veriYuklendi=!!(await sGet(K_VERI,false));
   devirdaimSure=await sGet(K_DEV,{...DEV_VARSAYILAN});
+  personel=await sGet(K_PERSONEL,[]);
   /* eski sürümden gelen ürün adlarını eşle */
   const esle={'Salatalık No.1':'Salatalık No.1'};
   tanklar.forEach(t=>{ if(t.urun&&!program[t.urun]){ const k=Object.keys(program).find(u=>u.toLocaleLowerCase('tr')===t.urun.toLocaleLowerCase('tr')); if(k) t.urun=k; } });
