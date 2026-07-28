@@ -425,7 +425,7 @@ function canliSenkronBaslat(){
 }
 
 /* ================= görev tanımları ================= */
-const GOREV={D:'Devirdaim 1',D2:'Devirdaim 2+2',DV:'Devirdaim',T:'Tuz 25 KG',B:'Bakım Suyu',U:'Ürün Kontrol',M:'Maya',BK:'Baskı Kontrol'};
+const GOREV={D:'Devirdaim 1',D2:'Devirdaim 2+2',DV:'Devirdaim',T:'Tuz',B:'Bakım Suyu',U:'Ürün Kontrol',M:'Maya',BK:'Baskı Kontrol'};
 const GOREV_SIRA=['D','D2','DV','T','B','U','M','BK'];
 
 /* ================= varsayılan program (Excel'den) =================
@@ -868,11 +868,14 @@ function cizTanklar(){
     document.getElementById('btnHizli').onclick=hizliEkle;
     document.getElementById('btnQR').onclick=qrOlustur;
   }
-  document.getElementById('ara').oninput=e=>{arama=e.target.value;cizTanklar();};
+  document.getElementById('ara').oninput=e=>{ arama=e.target.value; tankListesiCiz(); };
   document.getElementById('hdr').querySelector('.chips').onclick=e=>{
     const b=e.target.closest('.chip'); if(b){filtre=b.dataset.f;cizTanklar();}
   };
 
+  tankListesiCiz();
+}
+function tankListesiCiz(){
   const q=arama.trim().toLocaleLowerCase('tr');
   let liste=tanklar.filter(t=>{
     if(q && !((t.kod+' '+(t.urun||'')).toLocaleLowerCase('tr').includes(q))) return false;
