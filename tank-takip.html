@@ -725,6 +725,29 @@ function cizOzet(){
           <span class="gDeger">${(v.kg/1000).toLocaleString('tr-TR',{maximumFractionDigits:1})} t · ${v.adet}</span>
         </div>`).join('')}
     </div>
+    ${(()=>{
+      const kapanis=[];
+      for(let i=0;i<7;i++){
+        const d2=new Date(); d2.setDate(d2.getDate()+i);
+        const tar=d2.toISOString().slice(0,10);
+        const adet=aktif.filter(t=>{
+          const bitis=new Date(t.baslangic+'T00:00');
+          bitis.setDate(bitis.getDate()+(+t.hedefGun-1));
+          return bitis.toISOString().slice(0,10)===tar;
+        }).length;
+        kapanis.push({gun:kisaTarih(tar), adet});
+      }
+      const kMax=Math.max(1,...kapanis.map(x=>x.adet));
+      if(!kapanis.some(x=>x.adet)) return '';
+      return `<div class="sec">7 Günlük Kapanış Planı<small style="float:right;font-size:12px">hedefi dolan tank</small></div>
+      <div class="grafKutu dikeyGraf">
+        ${kapanis.map(x=>`<div class="dSutun">
+          <span class="dVal">${x.adet||''}</span>
+          <div class="dBar" style="height:${Math.round(x.adet/kMax*100)}%;background:linear-gradient(180deg,var(--yesil2),var(--yesil))"></div>
+          <span class="dGun">${x.gun}</span>
+        </div>`).join('')}
+      </div>`;
+    })()}
     <div class="sec">7 Günlük Tuz İhtiyacı</div>
     <div class="grafKutu dikeyGraf">
       ${tuzGunler.map(x=>`
@@ -800,17 +823,18 @@ function toplamKg(){
   return Math.round(kg);
 }
 function cizTanklar(){
-  const say={hepsi:0,hazir:0,yakin:0,gecti:0,dip:0,temiz:0,erken:0};
+  const say={hepsi:0,hazir:0,yakin:0,gecti:0,dip:0,temiz:0,erken:0,bugun:0};
   tanklar.forEach(t=>{
     if(t.bosaltildi){ if(t.temizlendi) say.temiz++; else say.dip++; return;}
     say.hepsi++; const d=durum(t); if(say[d]!==undefined) say[d]++;
     if(t.erkenBitiren) say.erken++;
+    if(gun(t)===+t.hedefGun) say.bugun++;
   });
   const kgToplam=toplamKg();
   document.getElementById('hdr').innerHTML=`
     <div class="top"><h1>Tanklar</h1><button class="icon" id="btnOkut">Okut</button>${yonetici?'<button class="icon" id="btnQR">QR</button><button class="icon" id="btnHizli">Hızlı Ekle</button>'+(veriYuklendi?'':'<button class="icon" id="btnVeri">Veri Yükle</button>')+'<button class="icon" id="btnYedek">Yedek</button>':''}<button class="icon" id="btnKilit">${yonetici?'🔓':'🔒'}</button></div>
     <input id="ara" placeholder="Tank ara: A-14, biber…" value="${arama}" autocomplete="off">
-    <div class="chips">${[['hepsi','Aktif'],['erken','⬇ Erken'],['hazir','Hazır'],['yakin','Yaklaşan'],['gecti','Geçen'],['dip','🧽 Temizlenecek'],['temiz','✓ Temiz']]
+    <div class="chips">${[['hepsi','Aktif'],['erken','⬇ Erken'],['hazir','Hazır'],['bugun','📅 Bugün Kapanacak'],['yakin','Yaklaşan'],['gecti','Geçen'],['dip','🧽 Temizlenecek'],['temiz','✓ Temiz']]
       .map(([k,ad])=>`<button class="chip" data-f="${k}" aria-pressed="${filtre===k}">${ad}<b>${say[k]||0}</b></button>`).join('')}`;
   document.getElementById('btnKilit').onclick=yoneticiGirisi;
   document.getElementById('btnOkut').onclick=qrOku;
@@ -833,6 +857,7 @@ function cizTanklar(){
     if(t.bosaltildi) return false;
     if(filtre==='hepsi') return true;
     if(filtre==='erken') return !!t.erkenBitiren;
+    if(filtre==='bugun') return gun(t)===+t.hedefGun;
     return durum(t)===filtre;
   });
   const sira={gecti:0,hazir:1,yakin:2,devam:3,dip:4,temiz:5};
