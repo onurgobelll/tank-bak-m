@@ -361,7 +361,7 @@ function cihazAtandiMi(){
 function kullaniciAdi(){
   const ad=cihazSahibi();
   if(ad) return ad;
-  if(personel.length) return '';   // liste var ama cihaz atanmamış → onay engellenir
+  if(personel.length) return yonetici? 'Yönetici' : '';   // liste var, cihaz atanmamış
   const y=(prompt('Adın ne? (onaylarda görünecek)')||'').trim();
   if(y){ try{ localStorage.setItem(K_AD,y); }catch(e){} }
   return y||'?';
