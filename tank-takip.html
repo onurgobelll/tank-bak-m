@@ -425,8 +425,9 @@ function canliSenkronBaslat(){
 }
 
 /* ================= görev tanımları ================= */
-const GOREV={D:'Devirdaim 1',D2:'Devirdaim 2+2',DV:'Devirdaim',T:'Tuz',B:'Bakım Suyu',U:'Ürün Kontrol',M:'Maya',BK:'Baskı Kontrol'};
-const GOREV_SIRA=['D','D2','DV','T','B','U','M','BK'];
+const GOREV={D:'Devirdaim',D2:'Devirdaim',DV:'Devirdaim',T:'Tuz',B:'Bakım Suyu',U:'Ürün Kontrol',M:'Maya',BK:'Baskı Kontrol'};
+const GOREV_PROG={D:'Devirdaim (D)',D2:'Devirdaim (D2)',DV:'Devirdaim (DV)',T:'Tuz',B:'Bakım Suyu',U:'Ürün Kontrol',M:'Maya',BK:'Baskı Kontrol'};
+const GOREV_SIRA=['DEV','D','D2','DV','T','B','U','M','BK'];
 
 /* ================= varsayılan program (Excel'den) =================
    Ürün → gün → {g:[görev kodları], tuz:{A..E kg}} */
@@ -933,7 +934,17 @@ function cizIsEmri(){
   liste.forEach(x=>x.gorevler.forEach(k=>{(grupHepsi[k]=grupHepsi[k]||[]).push(x);}));
   const gorevTipleri=GOREV_SIRA.filter(k=>grupHepsi[k]);
   if(ieGorev!=='hepsi' && !grupHepsi[ieGorev]) ieGorev='hepsi';
-  const grup = ieGorev==='hepsi' ? grupHepsi : {[ieGorev]:grupHepsi[ieGorev]};
+  let grup = ieGorev==='hepsi' ? grupHepsi : {[ieGorev]:grupHepsi[ieGorev]};
+  // devirdaim kodlarını (D/D2/DV) tek başlık altında birleştir
+  const devVar=DEVIR_KODLARI.filter(k=>grup[k]);
+  if(devVar.length){
+    const birlesik=[];
+    devVar.forEach(k=>{ (grup[k]||[]).forEach(x=>birlesik.push({...x, _kod:k})); });
+    birlesik.sort((a,b)=>a.t.kod.localeCompare(b.t.kod,'tr',{numeric:true}));
+    const yeni={DEV:birlesik};
+    Object.keys(grup).forEach(k=>{ if(!DEVIR_KODLARI.includes(k)) yeni[k]=grup[k]; });
+    grup=yeni;
+  }
   let toplamGorev=0, bitti=0, tuzToplam=0;
   Object.entries(grup).forEach(([k,arr])=>arr.forEach(x=>{
     toplamGorev++;
@@ -1002,17 +1013,18 @@ function cizIsEmri(){
     </div>`:''}
     ${GOREV_SIRA.filter(k=>grup[k]).map(k=>`
       <div class="grup">
-        <h3>${GOREV[k]}<small>${grup[k].length} tank${k==='T'?' · '+grup[k].reduce((n,x)=>n+(x.tuzKg||0),0)+' kg':''}${DEVIR_KODLARI.includes(k)?` <button class="cokluBtn" data-cg="${k}">${cokluGorev===k?'✕ Vazgeç':'☑ Çoklu'}</button>`:''}${yonetici?` <button class="tumuBtn" data-g="${k}">Tümü ✓</button>`:''}</small></h3>
+        <h3>${k==='DEV'?'Devirdaim':GOREV[k]}<small>${grup[k].length} tank${k==='T'?' · '+grup[k].reduce((n,x)=>n+(x.tuzKg||0),0)+' kg':''}${(k==='DEV'||DEVIR_KODLARI.includes(k))?` <button class="cokluBtn" data-cg="${k}">${cokluGorev===k?'✕ Vazgeç':'☑ Çoklu'}</button>`:''}${yonetici?` <button class="tumuBtn" data-g="${k}">Tümü ✓</button>`:''}</small></h3>
         ${cokluGorev===k?(()=>{
-          const acik=(grup[k]||[]).filter(x=>!done[x.t.id+':'+k]);
+          const acik=(grup[k]||[]).filter(x=>!done[x.t.id+':'+(x._kod||k)]);
           const seriler=[...new Set(acik.map(x=>seri(x.t)))].sort();
-          const seciliSay=[...cokluSecim].filter(x=>x.endsWith(':'+k)).length;
+          const tumKeys=(grup[k]||[]).map(x=>x.t.id+':'+(x._kod||k));
+          const seciliSay=[...cokluSecim].filter(x=>tumKeys.includes(x)).length;
           return `<div class="cokluBar">
             <div class="cbSeriler">
               <button class="cbSec" data-cgtum="${k}">Tümü</button>
               ${seriler.map(s=>{
                 const grupSeri=acik.filter(x=>seri(x.t)===s);
-                const hepsiSecili=grupSeri.every(x=>cokluSecim.has(x.t.id+':'+k));
+                const hepsiSecili=grupSeri.every(x=>cokluSecim.has(x.t.id+':'+(x._kod||k)));
                 return `<button class="cbSeri ${hepsiSecili?'aktif':''}" data-cgseri="${k}|${s}">${s} <b>${grupSeri.length}</b></button>`;
               }).join('')}
             </div>
@@ -1023,13 +1035,14 @@ function cizIsEmri(){
           </div>`;
         })():''}
         ${grup[k].map(x=>{
-          const key=x.t.id+':'+k, ok=!!done[key];
+          const gk=x._kod||k;
+          const key=x.t.id+':'+gk, ok=!!done[key];
           const secModu=(cokluGorev===k);
           const secili=cokluSecim.has(key);
           return `<button class="gorev ${ok?'ok':''} ${secModu?'secModu':''} ${secili?'secili':''}" data-key="${key}">
             <span class="cb"></span>
             <span class="gk">${x.t.kod}</span>
-            <span class="gd"><b>${x.g}. gün</b> · ${x.t.urun||''}${k==='T'&&x.tuzKg?` · <b>${x.tuzKg} kg</b>`:''}${(k==='D'||k==='D2'||k==='DV')&&devSureDeger(x.t)?` · <b>${devSureDeger(x.t)} sa${x.t.devSure?' *':''}</b>`:''}${ok&&done[key]&&done[key].k?`<span class="n">✓ ${done[key].k} · ${done[key].s||''}</span>`:''}</span>
+            <span class="gd"><b>${x.g}. gün</b> · ${x.t.urun||''}${gk==='T'&&x.tuzKg?` · <b>${x.tuzKg} kg</b>`:''}${DEVIR_KODLARI.includes(gk)&&devSureDeger(x.t)?` · <b>${devSureDeger(x.t)} sa${x.t.devSure?' (özel)':''}</b>`:''}${ok&&done[key]&&done[key].k?`<span class="n">✓ ${done[key].k} · ${done[key].s||''}</span>`:''}</span>
           </button>`;
         }).join('')}
       </div>`).join('')}`;
@@ -1044,7 +1057,7 @@ function cizIsEmri(){
     const cbt=ev.target.closest('[data-cgtum]');
     if(cbt){
       const k=cbt.dataset.cgtum;
-      const hepsi=(grup[k]||[]).filter(x=>!done[x.t.id+':'+k]).map(x=>x.t.id+':'+k);
+      const hepsi=(grup[k]||[]).filter(x=>!done[x.t.id+':'+(x._kod||k)]).map(x=>x.t.id+':'+(x._kod||k));
       const tamami=hepsi.every(key=>cokluSecim.has(key));
       hepsi.forEach(key=>{ if(tamami) cokluSecim.delete(key); else cokluSecim.add(key); });
       cizIsEmri(); return;
@@ -1052,7 +1065,7 @@ function cizIsEmri(){
     const cbs=ev.target.closest('[data-cgseri]');
     if(cbs){
       const [k,s]=cbs.dataset.cgseri.split('|');
-      const grupSeri=(grup[k]||[]).filter(x=>!done[x.t.id+':'+k] && seri(x.t)===s).map(x=>x.t.id+':'+k);
+      const grupSeri=(grup[k]||[]).filter(x=>!done[x.t.id+':'+(x._kod||k)] && seri(x.t)===s).map(x=>x.t.id+':'+(x._kod||k));
       const tamami=grupSeri.every(key=>cokluSecim.has(key));
       grupSeri.forEach(key=>{ if(tamami) cokluSecim.delete(key); else cokluSecim.add(key); });
       cizIsEmri(); return;
@@ -1061,9 +1074,10 @@ function cizIsEmri(){
     if(cbo){
       if(!onayYetkisi()) return;
       const k=cbo.dataset.cgonay;
-      const secilenler=[...cokluSecim].filter(x=>x.endsWith(':'+k));
+      const gecerli=(grup[k]||[]).map(x=>x.t.id+':'+(x._kod||k));
+      const secilenler=[...cokluSecim].filter(x=>gecerli.includes(x));
       if(!secilenler.length){ toast('Önce tank seç'); return; }
-      const ok2=await onayDialog(GOREV[k]+' — Çoklu Onay',
+      const ok2=await onayDialog((k==='DEV'?'Devirdaim':GOREV[k])+' — Çoklu Onay',
         secilenler.length+' tank onaylanacak.', 'Onayla');
       if(!ok2) return;
       const d=isemri[ieTarih]=isemri[ieTarih]||{};
@@ -1095,21 +1109,22 @@ function cizIsEmri(){
     if(tb){
       if(!yonetici){ toast('Toplu onay için yönetici PIN gerekli'); return; }
       const k=tb.dataset.g;
-      const hedef=(grup[k]||[]).filter(x=>!done[x.t.id+':'+k]);
+      const hedef=(grup[k]||[]).filter(x=>!done[x.t.id+':'+(x._kod||k)]);
       if(!hedef.length){ toast('Zaten hepsi onaylı'); return; }
       const ek = k==='T' ? ('\nToplam '+hedef.reduce((n,x)=>n+(x.tuzKg||0),0)+' kg') : '';
-      const onay=await onayDialog(GOREV[k]+' — Tümü',
+      const onay=await onayDialog((k==='DEV'?'Devirdaim':GOREV[k])+' — Tümü',
         hedef.length+' tank onaylanacak'+(ieUrun!=='hepsi'?' ('+ieUrun+')':'')+'.'+ek, 'Hepsini Onayla');
       if(!onay) return;
       const d=isemri[ieTarih]=isemri[ieTarih]||{};
       const ad=kullaniciAdi(), sa=saatSimdi();
-      hedef.forEach(x=>{ d[x.t.id+':'+k]={k:ad, s:sa}; });
+      hedef.forEach(x=>{ d[x.t.id+':'+(x._kod||k)]={k:ad, s:sa}; });
       await sSet(K_IS,isemri); cizIsEmri();
       toast(hedef.length+' görev onaylandı');
       return;
     }
     const g=ev.target.closest('.gorev'); if(!g) return;
-    if(cokluGorev && g.dataset.key && g.dataset.key.endsWith(':'+cokluGorev)){
+    const cokluKodlar = cokluGorev==='DEV' ? DEVIR_KODLARI : (cokluGorev?[cokluGorev]:[]);
+    if(cokluGorev && g.dataset.key && cokluKodlar.some(kk=>g.dataset.key.endsWith(':'+kk))){
       const key=g.dataset.key;
       if(cokluSecim.has(key)) cokluSecim.delete(key); else cokluSecim.add(key);
       cizIsEmri(); return;
@@ -1402,8 +1417,8 @@ function programGun(d){
   const pn=panel(`
     <div class="pbar"><h2>${progUrun} · ${d}. gün</h2><button class="icon" data-kapat>Kapat</button></div>
     <label>Görevler</label>
-    <div class="tags">${GOREV_SIRA.map(k=>
-      `<button class="tag" data-g="${k}" aria-pressed="${(p.g||[]).includes(k)}">${GOREV[k]}</button>`).join('')}</div>
+    <div class="tags">${GOREV_SIRA.filter(k=>k!=='DEV').map(k=>
+      `<button class="tag" data-g="${k}" aria-pressed="${(p.g||[]).includes(k)}">${GOREV_PROG[k]}</button>`).join('')}</div>
     <label>Tuz miktarı (kg, seriye göre)</label>
     <div class="tuzgrid">${['A','B','C','D','E'].map(s=>
       `<div><label>${s}</label><input type="number" id="tz${s}" inputmode="numeric" value="${p.tuz&&p.tuz[s]||''}"></div>`).join('')}</div>
