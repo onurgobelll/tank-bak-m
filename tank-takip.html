@@ -265,6 +265,14 @@ textarea{min-height:110px;resize:vertical;font-family:ui-monospace,monospace;fon
 .kimBtn{border-color:rgba(37,99,235,.35);color:var(--mavi);font-weight:600}
 .kimListe{margin-top:4px}
 .onayKutu input{margin-top:4px}
+.gunBuyuk{display:flex;align-items:center;justify-content:center;gap:12px;margin:0 0 14px;
+  background:linear-gradient(135deg,#DC2647,#F43F5E);border-radius:18px;padding:16px;
+  box-shadow:0 6px 20px rgba(220,38,71,.3)}
+.gb-hazir{background:linear-gradient(135deg,var(--yesil),var(--yesil2));box-shadow:0 6px 20px rgba(21,163,74,.3)}
+.gb-gecti{background:linear-gradient(135deg,#B91C1C,#DC2647)}
+.gbSayi{font-family:var(--cond);font-size:58px;font-weight:700;color:#fff;line-height:.9}
+.gbYazi{font-family:var(--cond);font-size:24px;font-weight:700;color:#fff;letter-spacing:.08em;line-height:1}
+.gbYazi small{display:block;font-size:13px;font-weight:400;opacity:.85;letter-spacing:.05em;margin-top:3px}
 .qrgorev{padding:18px 16px;border-radius:16px}
 .qrgorev .cb{flex:0 0 30px;height:30px;border-radius:9px}
 .qrgorev.ok .cb::after{line-height:28px;font-size:19px}
@@ -1087,7 +1095,7 @@ function cizProgram(){
     `<div><label>${s}</label><input id="dv${s}" value="${devirdaimSure[s]||''}" placeholder="2+2" ${yonetici?'':'disabled'}></div>`).join('')}</div>
   ${yonetici?`<button class="btn ghost" id="dvKaydet">Süreleri Kaydet</button>`:''}
   <div class="sec">Personel &amp; Cihaz</div>
-  <div class="grafKutu">
+  <div class="grafKutu" id="persKutu">
     <p class="hint" style="margin:0 0 8px">Bu cihaz: <b style="color:var(--ink)">${cihazSahibi()||'atanmamış'}</b>${cihazAtandiMi()?' (kilitli)':''}</p>
     ${personel.length?personel.map(ad=>`<div class="istSatir"><b>${ad}</b>
       ${yonetici?`<button class="miniBtn" data-ata="${ad}">Bu cihaza ata</button><button class="miniBtn miniSil" data-sil="${ad}">Sil</button>`:''}</div>`).join('')
@@ -1095,7 +1103,7 @@ function cizProgram(){
     ${yonetici?`<button class="btn ghost" id="persEkle" style="margin-top:10px">+ Personel Ekle</button>`:''}
   </div>
   <p class="hint">Seri harfi = tank kodunun ilk harfi (A–E). Tuz kg değerleri ve devirdaim süreleri seriye göre uygulanır.</p>`;
-  const pk=document.querySelector('.grafKutu');
+  const pk=document.getElementById('persKutu');
   if(yonetici && pk){
     pk.onclick=async ev=>{
       const ata=ev.target.closest('[data-ata]');
@@ -1821,13 +1829,21 @@ function qrYazdir(liste, yzBoy){
 }
 
 /* ================= QR ile açılan tank ekranı ================= */
+function qrCik(){
+  qrGoruntuKod=null;
+  const nv=document.querySelector('nav'); if(nv) nv.style.display='';
+  try{ history.replaceState(null,'',location.pathname); }catch(e){}
+  gorunum='tanklar'; ciz();
+}
 function cizTankIsEmri(kod){
   qrGoruntuKod=kod;
   document.querySelector('nav').style.display='none';
   document.getElementById('fab').style.display='none';
   const t=tanklar.find(x=>x.kod===kod && !x.bosaltildi) || tanklar.find(x=>x.kod===kod);
   document.getElementById('hdr').innerHTML=`
-    <div class="top"><h1>${kod}</h1><a class="icon" href="${tabanURL()}" style="text-decoration:none">Tüm Tanklar</a></div>`;
+    <div class="top"><button class="icon" id="qrGeri">‹ Geri</button><h1 style="flex:1;text-align:center">${kod}</h1><button class="icon" id="qrAna">Ana Sayfa</button></div>`;
+  const gb=document.getElementById('qrGeri'); if(gb) gb.onclick=qrCik;
+  const ab=document.getElementById('qrAna'); if(ab) ab.onclick=()=>{ qrGoruntuKod=null; const nv=document.querySelector('nav'); if(nv) nv.style.display=''; try{ history.replaceState(null,'',location.pathname); }catch(e){} gorunum='isemri'; ciz(); };
   const e=document.getElementById('ekran');
   if(!t){
     e.innerHTML=`<div class="empty"><b>Tank bulunamadı</b>Bu kod aktif tanklarda yok ya da boşaltılmış olabilir.</div>`;
@@ -1876,6 +1892,10 @@ function cizTankIsEmri(kod){
         </div>
         ${(()=>{const sb=tankBakimGecmisi(t,1)[0];return sb?`<p class="hint" style="margin:7px 0 0">Son bakım: ${sb.gorev} · ${kisaTarih(sb.tarih)}${sb.kisi?' · '+sb.kisi:''}</p>`:'';})()}
       </div>
+    </div>
+    <div class="gunBuyuk ${d==='hazir'?'gb-hazir':(d==='gecti'?'gb-gecti':'')}">
+      <span class="gbSayi">${g}</span>
+      <span class="gbYazi">. GÜN<small>hedef ${t.hedefGun} gün</small></span>
     </div>
     ${(!bugunProg||!bugunProg.g.length)?`<div class="empty"><b>Bugün görev yok</b>Bu tank için bugüne tanımlı bir iş bulunmuyor.</div>`:`
     <div class="grup">
