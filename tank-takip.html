@@ -236,6 +236,7 @@ textarea{min-height:110px;resize:vertical;font-family:ui-monospace,monospace;fon
 .dkart small{font-family:var(--cond);font-size:12px;color:var(--muted);letter-spacing:.06em}
 .dk-alarm b{color:var(--alarm)}
 .dk-hazir b{color:var(--yesil)}
+.dk-dip b{color:#B45309}
 .uyari{background:rgba(220,38,71,.07);border:1px solid rgba(220,38,71,.25);border-radius:11px;
   padding:10px 13px;margin-bottom:7px;font-size:13.5px;color:var(--ink)}
 .grafKutu{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:13px 14px;box-shadow:var(--golge)}
@@ -296,6 +297,8 @@ textarea{min-height:110px;resize:vertical;font-family:ui-monospace,monospace;fon
    adresini yapıştır (örn: 'https://tank-takip-default-rtdb.firebaseio.com').
    Boş bırakılırsa uygulama sadece bu telefonda çalışır (eski davranış). */
 const FIREBASE_URL = 'https://tank-takip-default-rtdb.firebaseio.com';
+const K_HEDEF='tanktakip:urunHedef';
+let urunHedef={};
 const K_PERSONEL='tanktakip:personel', K_AD_KILIT='tanktakip:cihazKilit';
 const K_TANK='tanktakip:tanklar', K_PROG='tanktakip:programv2', K_IS='tanktakip:isemri', K_VERI='tanktakip:veriYuklendi', K_DEV='tanktakip:devirdaimSure';
 const DEV_VARSAYILAN={A:'2+2',B:'2+2',C:'2+2',D:'1+1',E:'1+1'};
@@ -380,6 +383,7 @@ function canliSenkronBaslat(){
     const [t,p,i,dv,pe]=await Promise.all([fbGet(K_TANK),fbGet(K_PROG),fbGet(K_IS),fbGet(K_DEV),fbGet(K_PERSONEL)]);
     if(dv!==undefined) devirdaimSure=dv;
     if(pe!==undefined) personel=pe;
+    const uh=await fbGet(K_HEDEF); if(uh!==undefined) urunHedef=uh;
     let degisti=false;
     if(t!==undefined && JSON.stringify(t)!==JSON.stringify(tanklar)){ tanklar=t; degisti=true; }
     if(p!==undefined && JSON.stringify(p)!==JSON.stringify(program)){ program=p; degisti=true; }
@@ -672,6 +676,11 @@ function cizOzet(){
       <div class="dkart"><span>Stok</span><b>${(kgToplam/1000).toLocaleString('tr-TR',{maximumFractionDigits:1})}</b><small>ton</small></div>
       <div class="dkart ${gecenler.length?'dk-alarm':''}"><span>Süre Geçen</span><b>${gecenler.length}</b><small>tank</small></div>
     </div>
+    <div class="dstat">
+      <div class="dkart ${tanklar.filter(t=>t.bosaltildi&&!t.temizlendi).length?'dk-dip':''}"><span>Temizlenecek</span><b>${tanklar.filter(t=>t.bosaltildi&&!t.temizlendi).length}</b><small>dip</small></div>
+      <div class="dkart"><span>Temiz</span><b>${tanklar.filter(t=>t.bosaltildi&&t.temizlendi).length}</b><small>boş tank</small></div>
+      <div class="dkart"><span>Bugün Boşalan</span><b>${tanklar.filter(t=>t.bosaltildi===bugun).length}</b><small>tank</small></div>
+    </div>
     ${(()=>{const erk=aktif.filter(t=>t.erkenBitiren);return erk.length?`
       <button class="erkenBanner" id="erkenGit">
         <span class="ebIkon">⬇</span>
@@ -684,34 +693,6 @@ function cizOzet(){
     ${gecikenler.slice(0,5).map(x=>`<div class="uyari">⏰ ${x.t.kod} — ${GOREV[x.gorev]} · ${kisaTarih(x.tarih)}'den beri bekliyor</div>`).join('')}
     ${gecenler.slice(0,5).map(t=>`<div class="uyari">🔴 ${t.kod} — ${gun(t)}. gün, hedef ${t.hedefGun} gündü (${t.urun||''})</div>`).join('')}
     ${(gecikenler.length>5)?`<p class="hint">+${gecikenler.length-5} geciken görev daha — İş Emri'nde "Dünden Kalan" bölümünde</p>`:''}`:''}
-    ${(()=>{
-      const ozelSure=aktif.filter(t=>t.devSure);
-      const erken=aktif.filter(t=>t.erkenBitiren);
-      if(!ozelSure.length && !erken.length) return '';
-      return `<div class="sec">İstisnalar<small style="float:right;font-size:12px">normalden sapan tanklar</small></div>
-      <div class="grafKutu">
-        ${ozelSure.map(t=>`<div class="istisna">
-          <span class="iKod">${t.kod}</span>
-          <span class="iAck">Devirdaim <b>${t.devSure} saat</b> <em>(seri ${seri(t)} normalde ${devirdaimSure[seri(t)]||'—'})</em></span>
-        </div>`).join('')}
-        ${erken.map(t=>`<div class="istisna">
-          <span class="iKod">${t.kod}</span>
-          <span class="iAck">Erken hazır — <b>${t.hedefGun}. gün</b> <em>(${t.erkenBitiren}${t.erkenTarih?' · '+kisaTarih(t.erkenTarih):''})</em></span>
-        </div>`).join('')}
-      </div>`;
-    })()}
-    ${(ozelSureli.length||erkenler.length)?`
-    <div class="sec">İstisnalar<small style="float:right;font-size:12px">standart dışı ayar</small></div>
-    <div class="grafKutu">
-      ${ozelSureli.map(t=>`<div class="istisna">
-        <span class="iKod">${t.kod}</span>
-        <span class="iAck">Devirdaim <b>${t.devSure} saat</b> <em>(seri ${seri(t)} normalde ${devirdaimSure[seri(t)]||'—'})</em></span>
-      </div>`).join('')}
-      ${erkenler.map(t=>`<div class="istisna">
-        <span class="iKod">${t.kod}</span>
-        <span class="iAck">Erken hazır — <b>${t.hedefGun}. gün</b> <em>${t.erkenBitiren}${t.erkenTarih?' · '+kisaTarih(t.erkenTarih):''}</em></span>
-      </div>`).join('')}
-    </div>`:''}
     ${(()=>{
       const erken=aktif.filter(t=>t.erkenBitiren);
       const ozelSure=aktif.filter(t=>t.devSure);
@@ -1092,7 +1073,15 @@ function cizProgram(){
     </button>`;
   }).join(''):'<div class="empty"><b>Program boş</b>Bu ürüne gün ekle.</div>')+
   (yonetici?`<button class="btn ghost" id="gunEkle">+ Gün ekle</button>`:'')+
-  `<div class="sec">Devirdaim Süreleri<small style="float:right;font-size:12px">seriye göre, saat (sabah+akşam)</small></div>
+  `<div class="sec">Hedef Gün — ${progUrun}</div>
+  <div class="grafKutu">
+    <p class="hint" style="margin:0 0 8px">Bu üründe <b style="color:var(--ink)">${tanklar.filter(t=>!t.bosaltildi&&t.urun===progUrun).length} aktif tank</b> · şu anki hedef: <b style="color:var(--ink)">${urunHedef[progUrun]||hedefGunHesapla(progUrun)} gün</b></p>
+    ${yonetici?`<div class="two" style="align-items:flex-end">
+      <div style="flex:2"><label>Yeni hedef gün</label><input type="number" id="uhGun" value="${urunHedef[progUrun]||hedefGunHesapla(progUrun)}" min="1"></div>
+      <button class="btn ghost" id="uhKaydet" style="flex:1;margin-top:0">Uygula</button>
+    </div>`:'<p class="hint" style="margin:0">Değiştirmek için yönetici girişi gerekli.</p>'}
+  </div>
+  <div class="sec">Devirdaim Süreleri<small style="float:right;font-size:12px">seriye göre, saat (sabah+akşam)</small></div>
   <div class="tuzgrid">${['A','B','C','D','E'].map(s=>
     `<div><label>${s}</label><input id="dv${s}" value="${devirdaimSure[s]||''}" placeholder="2+2" ${yonetici?'':'disabled'}></div>`).join('')}</div>
   ${yonetici?`<button class="btn ghost" id="dvKaydet">Süreleri Kaydet</button>`:''}
@@ -1134,6 +1123,23 @@ function cizProgram(){
       if(personel.includes(ad)){ toast('Zaten listede'); return; }
       personel.push(ad);
       await sSet(K_PERSONEL,personel); cizProgram(); toast(ad+' eklendi');
+    };
+  }
+  if(yonetici && document.getElementById('uhKaydet')){
+    document.getElementById('uhKaydet').onclick=async()=>{
+      const yeni=+document.getElementById('uhGun').value;
+      if(!yeni||yeni<1){ toast('Geçerli bir gün gir'); return; }
+      const etkilenen=tanklar.filter(t=>!t.bosaltildi&&t.urun===progUrun&&!t.erkenBitiren);
+      const ok=await onayDialog(progUrun+' — Hedef Gün',
+        'Yeni hedef: '+yeni+' gün.\nYeni dolumlarda geçerli olacak.\n\nMevcut '+etkilenen.length+' aktif tanka da uygulansın mı? (Erken hazır işaretliler hariç)',
+        etkilenen.length? etkilenen.length+' tanka uygula' : 'Kaydet');
+      if(!ok) return;
+      urunHedef[progUrun]=yeni;
+      etkilenen.forEach(t=>{ t.hedefGun=yeni; });
+      await sSet(K_HEDEF,urunHedef);
+      if(etkilenen.length) await sSet(K_TANK,tanklar);
+      cizProgram();
+      toast(progUrun+': '+yeni+' gün'+(etkilenen.length?' · '+etkilenen.length+' tank güncellendi':''));
     };
   }
   if(yonetici && document.getElementById('dvKaydet')){
@@ -1351,9 +1357,16 @@ function detay(id){
       </div>
       <input id="o_not" placeholder="Köpük, koku, tuz takviyesi…" style="margin-top:10px">
       <button class="btn" id="o_kaydet">Ölçümü kaydet</button>`:'')}
-    ${(t.kimyasallar||[]).length?`<h3>Kimyasal geçmişi</h3>`+t.kimyasallar.map(x=>`
+    <h3>Kimyasal / Ek İşlem</h3>
+    <div class="tags kimTags" id="dKimTags">
+      ${KIMYASALLAR.map(kim=>`<button class="tag kimBtn" data-kim="${kim}">+ ${kim}</button>`).join('')}
+      <button class="tag kimBtn" data-kim="__diger__">+ Diğer…</button>
+    </div>
+    ${(t.kimyasallar||[]).length?t.kimyasallar.map((x,i)=>`
       <div class="log"><span class="d">${kisaTarih(x.tarih)}</span>
-      <span class="v">${x.ad}${x.miktar?` <em>· ${x.miktar}</em>`:''}<span class="n">${x.k||''}${x.s?' · '+x.s:''}</span></span></div>`).join(''):''}
+      <span class="v">${x.ad}${x.miktar?` <em>· ${x.miktar}</em>`:''}<span class="n">${x.k||''}${x.s?' · '+x.s:''}</span></span>
+      <button class="miniBtn kimDuzelt" data-i="${i}">Düzelt</button></div>`).join('')
+      :'<p class="hint">Henüz kimyasal girilmemiş.</p>'}
     ${phGrafik(t)}
     ${(()=>{const bg=tankBakimGecmisi(t,8);return bg.length?`<h3>Bakım geçmişi</h3>`+bg.map(b=>`
       <div class="log"><span class="d">${kisaTarih(b.tarih)}</span>
@@ -1371,6 +1384,10 @@ function detay(id){
       <button class="btn ghost" id="t_devKaydet" style="flex:1;margin-top:0">Kaydet</button>
     </div>
     <h3>İşlemler</h3>
+    ${t.bosaltildi?(t.temizlendi
+      ?`<p class="hint">✓ Temizlik: ${kisaTarih(t.temizlendi)}${t.temizleyen?' · '+t.temizleyen:''}${t.temizlikSaat?' · '+t.temizlikSaat:''}</p>
+        <button class="btn ghost" id="temizGeri">Temizliği geri al</button>`
+      :`<button class="btn" id="temizYap">🧽 Temizlik Yapıldı</button>`):''}
     <button class="btn ghost" id="duzenle">Tankı düzenle</button>
     ${t.bosaltildi
       ?`<button class="btn ghost" id="geriac">Boşaltmayı geri al</button><p class="hint">Boşaltma: ${kisaTarih(t.bosaltildi)}${t.bosaltan?` · ${t.bosaltan}${t.bosaltmaSaat?' · '+t.bosaltmaSaat:''}`:''}</p>`
@@ -1416,6 +1433,40 @@ function detay(id){
   }else{
     q('#geriac').onclick=async()=>{t.bosaltildi='';await sSet(K_TANK,tanklar);detay(id);};
   }
+  const dkt=q('#dKimTags');
+  if(dkt) dkt.onclick=async ev=>{
+    const kb=ev.target.closest('.kimBtn'); if(!kb) return;
+    let ad=kb.dataset.kim;
+    if(ad==='__diger__'){
+      ad=await girdiDialog('Kimyasal adı','Program dışı eklediğin maddeyi yaz.','Örn: Kalsiyum klorür');
+      if(!ad) return;
+    }
+    const miktar=await girdiDialog(ad+' — miktar', t.kod+' tankına eklenen miktar.', 'Örn: 5 kg');
+    if(miktar===null) return;
+    (t.kimyasallar=t.kimyasallar||[]).unshift({ad, miktar, tarih:bugunISO(), k:kullaniciAdi(), s:saatSimdi()});
+    await sSet(K_TANK,tanklar); detay(id); toast(ad+' kaydedildi');
+  };
+  p.querySelectorAll('.kimDuzelt').forEach(b=>{
+    b.onclick=async()=>{
+      const i=+b.dataset.i, kay=(t.kimyasallar||[])[i];
+      if(!kay) return;
+      const ym=await girdiDialog(kay.ad+' — Düzelt','Miktarı değiştir; silmek için boşalt ve Kaydet.', kay.miktar||'');
+      if(ym===null) return;
+      if(ym===''){ t.kimyasallar.splice(i,1); toast('Silindi'); }
+      else { kay.miktar=ym; toast('Güncellendi'); }
+      await sSet(K_TANK,tanklar); detay(id);
+    };
+  });
+  const ty=q('#temizYap');
+  if(ty) ty.onclick=async()=>{
+    t.temizlendi=bugunISO(); t.temizleyen=kullaniciAdi(); t.temizlikSaat=saatSimdi();
+    await sSet(K_TANK,tanklar); detay(id); toast(t.kod+' temiz listesine geçti');
+  };
+  const tg=q('#temizGeri');
+  if(tg) tg.onclick=async()=>{
+    delete t.temizlendi; delete t.temizleyen; delete t.temizlikSaat;
+    await sSet(K_TANK,tanklar); detay(id); toast('Temizlik geri alındı');
+  };
   const tdv=q('#t_devKaydet');
   if(tdv) tdv.onclick=async()=>{
     const v=q('#t_dev').value.trim();
@@ -1447,6 +1498,7 @@ const URUN_DESENLERI=[
   {re:/erik/i, urun:'Erik Turşusu'}
 ];
 function hedefGunHesapla(urun){
+  if(urunHedef[urun]) return +urunHedef[urun];
   const up=program[urun];
   if(!up) return 30;
   const gunler=Object.keys(up).map(Number);
@@ -1882,10 +1934,11 @@ function cizTankIsEmri(kod){
       </div>
       ${(t.kimyasallar||[]).length?`
         <div class="kimListe">
-          ${t.kimyasallar.slice(0,6).map(x=>`
+          ${t.kimyasallar.slice(0,6).map((x,i)=>`
             <div class="log"><span class="d">${kisaTarih(x.tarih)}</span>
             <span class="v">${x.ad}${x.miktar?` <em>· ${x.miktar}</em>`:''}
-            <span class="n">${x.k||''}${x.s?' · '+x.s:''}</span></span></div>`).join('')}
+            <span class="n">${x.k||''}${x.s?' · '+x.s:''}</span></span>
+            <button class="miniBtn kimDuzelt" data-i="${i}">Düzelt</button></div>`).join('')}
         </div>`:'<p class="hint">Henüz kimyasal girilmemiş.</p>'}
     </div>
     <button class="btn danger" id="qrBosalt">Tankı Boşalt</button>
@@ -1905,6 +1958,17 @@ function cizTankIsEmri(kod){
     toast(t.kod+' boşaltıldı');
   };
   e.onclick=async ev=>{
+    const kd=ev.target.closest('.kimDuzelt');
+    if(kd){
+      if(!onayYetkisi()) return;
+      const i=+kd.dataset.i, kay=(t.kimyasallar||[])[i];
+      if(!kay) return;
+      const ym=await girdiDialog(kay.ad+' — Düzelt','Miktarı değiştir; silmek için kutuyu boşalt ve Kaydet.', kay.miktar||'');
+      if(ym===null) return;
+      if(ym===''){ t.kimyasallar.splice(i,1); toast('Kayıt silindi'); }
+      else { kay.miktar=ym; kay.k=kullaniciAdi(); kay.s=saatSimdi(); toast('Güncellendi'); }
+      await sSet(K_TANK,tanklar); cizTankIsEmri(kod); return;
+    }
     const kb=ev.target.closest('.kimBtn');
     if(kb){
       if(!onayYetkisi()) return;
@@ -2017,6 +2081,7 @@ function yedek(){
   veriYuklendi=!!(await sGet(K_VERI,false));
   devirdaimSure=await sGet(K_DEV,{...DEV_VARSAYILAN});
   personel=await sGet(K_PERSONEL,[]);
+  urunHedef=await sGet(K_HEDEF,{});
   /* eski sürümden gelen ürün adlarını eşle */
   const esle={'Salatalık No.1':'Salatalık No.1'};
   tanklar.forEach(t=>{ if(t.urun&&!program[t.urun]){ const k=Object.keys(program).find(u=>u.toLocaleLowerCase('tr')===t.urun.toLocaleLowerCase('tr')); if(k) t.urun=k; } });
