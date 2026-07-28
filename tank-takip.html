@@ -492,6 +492,7 @@ const urunler=()=>Object.keys(program);
 function durum(t){
   if(t.bosaltildi) return t.temizlendi? 'temiz' : 'dip';
   const g=gun(t),h=+t.hedefGun;
+  if(g>=h && t.hedefDusuk) return 'hazir';   // hedef sonradan düşürüldü → gecikme sayılmaz
   if(g>h+3) return 'gecti';
   if(g>=h) return 'hazir';
   if(g>=h-2) return 'yakin';
@@ -1135,7 +1136,10 @@ function cizProgram(){
         etkilenen.length? etkilenen.length+' tanka uygula' : 'Kaydet');
       if(!ok) return;
       urunHedef[progUrun]=yeni;
-      etkilenen.forEach(t=>{ t.hedefGun=yeni; });
+      etkilenen.forEach(t=>{
+        if(gun(t)>=yeni) t.hedefDusuk=true; else delete t.hedefDusuk;
+        t.hedefGun=yeni;
+      });
       await sSet(K_HEDEF,urunHedef);
       if(etkilenen.length) await sSet(K_TANK,tanklar);
       cizProgram();
@@ -1576,7 +1580,7 @@ function hizliOnizleGoster(p, satirlarMetin){
           Object.assign(bosOlan,veri);
           delete bosOlan.bosaltildi; delete bosOlan.bosaltan; delete bosOlan.bosaltmaSaat;
           delete bosOlan.temizlendi; delete bosOlan.temizleyen; delete bosOlan.temizlikSaat;
-          delete bosOlan.erkenBitiren; delete bosOlan.erkenTarih; delete bosOlan.hedefGunAsil;
+          delete bosOlan.erkenBitiren; delete bosOlan.erkenTarih; delete bosOlan.hedefGunAsil; delete bosOlan.hedefDusuk;
           bosOlan.olcumler=[]; bosOlan.kimyasallar=[];
         }
         else{ tanklar.push({id:'t'+Date.now()+'_'+Math.random().toString(36).slice(2,7),...veri,bosaltildi:'',olcumler:[]}); }
@@ -2085,6 +2089,14 @@ function yedek(){
   /* eski sürümden gelen ürün adlarını eşle */
   const esle={'Salatalık No.1':'Salatalık No.1'};
   tanklar.forEach(t=>{ if(t.urun&&!program[t.urun]){ const k=Object.keys(program).find(u=>u.toLocaleLowerCase('tr')===t.urun.toLocaleLowerCase('tr')); if(k) t.urun=k; } });
+  // hedefi ürün bazında düşürülmüş ama eski kayıtta kırmızı görünen tankları düzelt
+  let duzeltme=false;
+  tanklar.forEach(t=>{
+    if(t.bosaltildi||t.hedefDusuk) return;
+    const uh=urunHedef[t.urun];
+    if(uh && +t.hedefGun===+uh && gun(t)>=+uh){ t.hedefDusuk=true; duzeltme=true; }
+  });
+  if(duzeltme) await sSet(K_TANK,tanklar);
   const qsTank=new URLSearchParams(location.search).get('tank');
   if(qsTank){ cizTankIsEmri(qsTank.toUpperCase()); }
   else{ ciz(); }
