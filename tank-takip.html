@@ -374,20 +374,37 @@ async function fbGet(k){
   }catch(e){ return undefined; }
 }
 async function fbGetDurum(k){
-  if(!FIREBASE_URL) return {ok:false, data:undefined};
+  if(!FIREBASE_URL) return {ok:false, data:undefined, hata:'URL yok'};
   try{
     const r=await fetch(FIREBASE_URL.replace(/\/$/,'')+'/'+encodeURIComponent(k)+'.json');
-    if(!r.ok) return {ok:false, data:undefined};
+    if(!r.ok){
+      let hata=''; try{ const j=await r.json(); hata=j&&j.error?j.error:''; }catch(e2){}
+      bulutDurum.okuma=false; bulutDurum.mesaj=hata||('HTTP '+r.status);
+      return {ok:false, data:undefined, hata:hata||('HTTP '+r.status)};
+    }
     const data=await r.json();
+    bulutDurum.okuma=true;
     return {ok:true, data:(data===null?undefined:data)};
-  }catch(e){ return {ok:false, data:undefined}; }
+  }catch(e){ bulutDurum.okuma=false; bulutDurum.mesaj='bağlantı yok'; return {ok:false, data:undefined, hata:'bağlantı yok'}; }
 }
+let bulutDurum={yazma:null, okuma:null, mesaj:''};
 async function fbSet(k,v){
   if(!FIREBASE_URL) return false;
   try{
-    await fetch(FIREBASE_URL.replace(/\/$/,'')+'/'+encodeURIComponent(k)+'.json',{method:'PUT',body:JSON.stringify(v)});
+    const r=await fetch(FIREBASE_URL.replace(/\/$/,'')+'/'+encodeURIComponent(k)+'.json',{method:'PUT',body:JSON.stringify(v)});
+    if(!r.ok){
+      let hata=''; try{ const j=await r.json(); hata=j&&j.error?j.error:''; }catch(e2){}
+      bulutDurum.yazma=false; bulutDurum.mesaj=hata||('HTTP '+r.status);
+      toast('⚠ Buluta kaydedilemedi: '+(hata||r.status));
+      return false;
+    }
+    bulutDurum.yazma=true; bulutDurum.mesaj='';
     return true;
-  }catch(e){ return false; }
+  }catch(e){
+    bulutDurum.yazma=false; bulutDurum.mesaj='bağlantı yok';
+    toast('⚠ Buluta kaydedilemedi (bağlantı yok)');
+    return false;
+  }
 }
 function programNormalize(p){
   if(!p||typeof p!=='object') return {};
@@ -457,17 +474,25 @@ function yoneticiGirisi(){
   else toast('Yanlış PIN');
 }
 async function simdiSenkronEt(){
-  if(!FIREBASE_URL){ toast('Firebase bağlı değil'); return; }
+  if(!FIREBASE_URL){ toast('Firebase adresi tanımlı değil'); return; }
   toast('Senkronize ediliyor…');
-  const [t,p,i,dv,pe,uh]=await Promise.all([fbGet(K_TANK),fbGet(K_PROG),fbGet(K_IS),fbGet(K_DEV),fbGet(K_PERSONEL),fbGet(K_HEDEF)]);
+  const pd=await fbGetDurum(K_PROG);
+  if(!pd.ok){
+    await onayDialog('Bulut Bağlantısı Yok',
+      'Sunucudan veri alınamadı.\nHata: '+(pd.hata||'bilinmiyor')+
+      '\n\nBu durumda cihazlar birbirini göremez; her telefon kendi kopyasını gösterir.\n\n'+
+      'Çözüm: Firebase konsolunda Realtime Database → Rules bölümünü açıp izin kurallarını yayınla.','Anladım');
+    return;
+  }
+  const [t,i,dv,pe,uh]=await Promise.all([fbGet(K_TANK),fbGet(K_IS),fbGet(K_DEV),fbGet(K_PERSONEL),fbGet(K_HEDEF)]);
   if(t!==undefined) tanklar=t;
-  if(p!==undefined) program=programNormalize(p);
+  if(pd.data!==undefined) program=programNormalize(pd.data);
   if(i!==undefined) isemri=i;
   if(dv!==undefined) devirdaimSure=dv;
   if(pe!==undefined) personel=pe;
   if(uh!==undefined) urunHedef=uh;
   ciz();
-  toast('Güncel veri alındı');
+  toast('Bulut ile eşitlendi');
 }
 function canliSenkronBaslat(){
   if(!FIREBASE_URL) return;
@@ -1337,6 +1362,18 @@ function cizProgram(){
   }
   document.getElementById('btnKilit').onclick=yoneticiGirisi;
   const bs=document.getElementById('btnSenk'); if(bs) bs.onclick=simdiSenkronEt;
+  const bt=document.getElementById('bulutTest');
+  if(bt) bt.onclick=async()=>{
+    toast('Test ediliyor…');
+    const okuma=await fbGetDurum(K_PROG);
+    const yaz=await fbSet('tanktakip:test',{z:Date.now()});
+    await onayDialog('Bulut Testi',
+      'Okuma: '+(okuma.ok?'✓ başarılı':'✗ '+(okuma.hata||'hata'))+
+      '\nYazma: '+(yaz?'✓ başarılı':'✗ başarısız')+
+      (okuma.ok&&yaz?'\n\nHer şey yolunda, cihazlar senkron.':'\n\nFirebase → Realtime Database → Rules bölümünden izinleri açman gerekiyor.'),
+      'Tamam');
+    cizProgram();
+  };
   document.getElementById('hdr').querySelector('.chips').onclick=e=>{
     const b=e.target.closest('.chip'); if(b){progUrun=b.dataset.u;cizProgram();}
   };
@@ -1345,7 +1382,7 @@ function cizProgram(){
   document.getElementById('ekran').innerHTML=(gunler.length?gunler.map(d=>{
     const p=up[d];
     const ad=(p.g||[]).map(k=>GOREV[k]).join(' | ')||'—';
-    const tuz=Object.entries(p.tuz||{}).map(([s,v])=>s+':'+v).join(' ');
+    const tuz=(p.g||[]).includes('T') ? Object.entries(p.tuz||{}).map(([s,v])=>s+':'+v).join(' ') : '';
     return `<button class="prow" data-d="${d}">
       <span class="pd">${d}</span>
       <span class="pt"><b>${ad}</b>${tuz?`<br>${tuz} kg`:''}</span>
@@ -1383,6 +1420,14 @@ function cizProgram(){
     <input type="file" id="sabDosya" accept=".csv,text/csv" style="display:none">
     <p class="hint">İndir → Excel'de düzenle → Yükle. Satır ekleyip silebilirsin; yükleme mevcut programın yerine geçer.</p>
   </div>`:''}
+  <div class="sec">Bulut Bağlantısı</div>
+  <div class="grafKutu">
+    <p class="hint" style="margin:0">${!FIREBASE_URL?'<b style="color:var(--alarm)">Adres tanımlı değil</b> — veriler sadece bu telefonda.'
+      :(bulutDurum.okuma===false||bulutDurum.yazma===false)
+        ? '<b style="color:var(--alarm)">Bağlantı sorunu</b> — '+(bulutDurum.mesaj||'')+'<br>Cihazlar birbirini göremiyor. Firebase → Realtime Database → Rules ayarını kontrol et.'
+        : (bulutDurum.okuma===true? '<b style="color:var(--yesil)">Bağlı</b> — veriler tüm cihazlarla paylaşılıyor.' : 'Durum bilinmiyor — 🔄 ile test et.')}</p>
+    <button class="btn ghost" id="bulutTest" style="margin-top:10px">Bağlantıyı Test Et</button>
+  </div>
   <div class="sec">Personel &amp; Cihaz</div>
   <div class="grafKutu" id="persKutu">
     <p class="hint" style="margin:0 0 8px">Bu cihaz: <b style="color:var(--ink)">${cihazSahibi()||'atanmamış'}</b>${cihazAtandiMi()?' (kilitli)':''}</p>
