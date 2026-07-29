@@ -1,4 +1,4 @@
-const CACHE = 'tanktakip-v2';
+const CACHE = "tanktakip-v3";
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(['./tank-takip.html'])).then(()=>self.skipWaiting()));
 });

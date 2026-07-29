@@ -373,12 +373,42 @@ async function fbGet(k){
     return data===null?undefined:data;
   }catch(e){ return undefined; }
 }
+async function fbGetDurum(k){
+  if(!FIREBASE_URL) return {ok:false, data:undefined};
+  try{
+    const r=await fetch(FIREBASE_URL.replace(/\/$/,'')+'/'+encodeURIComponent(k)+'.json');
+    if(!r.ok) return {ok:false, data:undefined};
+    const data=await r.json();
+    return {ok:true, data:(data===null?undefined:data)};
+  }catch(e){ return {ok:false, data:undefined}; }
+}
 async function fbSet(k,v){
   if(!FIREBASE_URL) return false;
   try{
     await fetch(FIREBASE_URL.replace(/\/$/,'')+'/'+encodeURIComponent(k)+'.json',{method:'PUT',body:JSON.stringify(v)});
     return true;
   }catch(e){ return false; }
+}
+function programNormalize(p){
+  if(!p||typeof p!=='object') return {};
+  const out={};
+  Object.keys(p).forEach(urun=>{
+    const gunler=p[urun];
+    if(!gunler||typeof gunler!=='object') return;
+    const temiz={};
+    Object.keys(gunler).forEach(k=>{
+      const v=gunler[k];
+      if(v===null||v===undefined) return;
+      const d=parseInt(k,10);
+      if(!d||d<1) return;
+      const g=Array.isArray(v.g)? v.g.filter(Boolean) : (v.g?Object.values(v.g).filter(Boolean):[]);
+      const tuz={};
+      if(v.tuz&&typeof v.tuz==='object') Object.keys(v.tuz).forEach(s=>{ if(v.tuz[s]) tuz[s]=+v.tuz[s]; });
+      temiz[d]={g,tuz};
+    });
+    out[urun]=temiz;
+  });
+  return out;
 }
 async function sGet(k,vars){
   const uzak=await fbGet(k);
@@ -426,17 +456,32 @@ function yoneticiGirisi(){
   if(pin===ADMIN_PIN){ yonetici=true; toast('Yönetici modu açık'); ciz(); }
   else toast('Yanlış PIN');
 }
+async function simdiSenkronEt(){
+  if(!FIREBASE_URL){ toast('Firebase bağlı değil'); return; }
+  toast('Senkronize ediliyor…');
+  const [t,p,i,dv,pe,uh]=await Promise.all([fbGet(K_TANK),fbGet(K_PROG),fbGet(K_IS),fbGet(K_DEV),fbGet(K_PERSONEL),fbGet(K_HEDEF)]);
+  if(t!==undefined) tanklar=t;
+  if(p!==undefined) program=programNormalize(p);
+  if(i!==undefined) isemri=i;
+  if(dv!==undefined) devirdaimSure=dv;
+  if(pe!==undefined) personel=pe;
+  if(uh!==undefined) urunHedef=uh;
+  ciz();
+  toast('Güncel veri alındı');
+}
 function canliSenkronBaslat(){
   if(!FIREBASE_URL) return;
   setInterval(async()=>{
     if(document.getElementById('panel')) return; // düzenleme sırasında araya girme
-    const [t,p,i,dv,pe]=await Promise.all([fbGet(K_TANK),fbGet(K_PROG),fbGet(K_IS),fbGet(K_DEV),fbGet(K_PERSONEL)]);
+    const pd=await fbGetDurum(K_PROG);
+    const [t,i,dv,pe]=await Promise.all([fbGet(K_TANK),fbGet(K_IS),fbGet(K_DEV),fbGet(K_PERSONEL)]);
+    const p = pd.ok ? pd.data : undefined;
     if(dv!==undefined) devirdaimSure=dv;
     if(pe!==undefined) personel=pe;
     const uh=await fbGet(K_HEDEF); if(uh!==undefined) urunHedef=uh;
     let degisti=false;
     if(t!==undefined && JSON.stringify(t)!==JSON.stringify(tanklar)){ tanklar=t; degisti=true; }
-    if(p!==undefined && JSON.stringify(p)!==JSON.stringify(program)){ program=p; degisti=true; }
+    if(p!==undefined){ const pN=programNormalize(p); if(JSON.stringify(pN)!==JSON.stringify(program)){ program=pN; degisti=true; } }
     if(i!==undefined && JSON.stringify(i)!==JSON.stringify(isemri)){ isemri=i; degisti=true; }
     if(degisti){ if(qrGoruntuKod) cizTankIsEmri(qrGoruntuKod); else ciz(); }
   },15000);
@@ -1275,7 +1320,7 @@ function cizProgram(){
   const us=urunler();
   if(!progUrun||!us.includes(progUrun)) progUrun=us[0];
   document.getElementById('hdr').innerHTML=`
-    <div class="top"><h1>Program</h1>${yonetici?'<button class="icon" id="pYeni">+ Ürün</button><button class="icon" id="pSifirla">Varsayılan</button>':''}<button class="icon" id="btnKilit">${yonetici?'🔓':'🔒'}</button></div>
+    <div class="top"><h1>Program</h1><button class="icon" id="btnSenk">🔄</button>${yonetici?'<button class="icon" id="pYeni">+ Ürün</button><button class="icon" id="pSifirla">Varsayılan</button>':''}<button class="icon" id="btnKilit">${yonetici?'🔓':'🔒'}</button></div>
     <div class="chips">${us.map(u=>`<button class="chip" data-u="${u}" aria-pressed="${progUrun===u}">${u}</button>`).join('')}</div>`;
   if(yonetici){
     document.getElementById('pSifirla').onclick=async()=>{
@@ -1291,6 +1336,7 @@ function cizProgram(){
     };
   }
   document.getElementById('btnKilit').onclick=yoneticiGirisi;
+  const bs=document.getElementById('btnSenk'); if(bs) bs.onclick=simdiSenkronEt;
   document.getElementById('hdr').querySelector('.chips').onclick=e=>{
     const b=e.target.closest('.chip'); if(b){progUrun=b.dataset.u;cizProgram();}
   };
@@ -1458,7 +1504,8 @@ function programGun(d){
     const tuz={};
     ['A','B','C','D','E'].forEach(s=>{const v=+pn.querySelector('#tz'+s).value;if(v)tuz[s]=v;});
     up[d]={g,tuz};
-    await sSet(K_PROG,program); kapat(); cizProgram(); toast(d+'. gün kaydedildi');
+    program=programNormalize(program);
+    await sSet(K_PROG,program); kapat(); cizProgram(); toast(d+'. gün kaydedildi · diğer cihazlara gidiyor');
   };
   pn.querySelector('#pSil').onclick=async()=>{
     delete up[d];
@@ -2367,8 +2414,19 @@ function yedek(){
 /* ================= başlat ================= */
 (async()=>{
   tanklar=await sGet(K_TANK,[]);
-  program=await sGet(K_PROG,null);
-  if(!program){ program=varsayilanProgram(); await sSet(K_PROG,program); }
+  const progDurum=await fbGetDurum(K_PROG);
+  if(progDurum.ok && progDurum.data!==undefined){
+    program=programNormalize(progDurum.data);
+    try{ localStorage.setItem(K_PROG,JSON.stringify(program)); }catch(e){}
+  }else{
+    // Firebase'e ulaşılamadı ya da veri yok → yerel kopyayı kullan, ÜZERİNE YAZMA
+    program=programNormalize(await sGet(K_PROG,null));
+  }
+  if(!Object.keys(program).length){
+    program=varsayilanProgram();
+    // varsayılanı yalnızca Firebase gerçekten boşsa yaz (bağlantı hatasında yazma!)
+    if(progDurum.ok) await sSet(K_PROG,program);
+  }
   isemri=await sGet(K_IS,{});
   veriYuklendi=!!(await sGet(K_VERI,false));
   devirdaimSure=await sGet(K_DEV,{...DEV_VARSAYILAN});
