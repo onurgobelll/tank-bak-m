@@ -687,6 +687,50 @@ function onayDialog(baslik, detay, evetMetin){
   });
 }
 
+function secimDialog(baslik, detay, secenekler){
+  return new Promise(resolve=>{
+    const ov=document.createElement('div');
+    ov.className='onayOverlay';
+    ov.innerHTML=`
+      <div class="onayKutu">
+        <p class="ob">${baslik}</p>
+        ${detay?`<p class="od" style="text-align:left;white-space:pre-line;max-height:44vh;overflow:auto">${detay}</p>`:''}
+        ${secenekler.map((s,i)=>`<button class="btn ${s.tur==='ana'?'':'ghost'}" data-sec="${i}" style="margin-top:8px">${s.etiket}</button>`).join('')}
+        <button class="btn ghost" data-sec="-1" style="margin-top:8px">Vazgeç</button>
+      </div>`;
+    document.body.appendChild(ov);
+    ov.onclick=e=>{
+      const b=e.target.closest('[data-sec]');
+      if(b){ const i=+b.dataset.sec; ov.remove(); resolve(i); return; }
+      if(e.target===ov){ ov.remove(); resolve(-1); }
+    };
+  });
+}
+/* aynı koda sahip DOLU (boşaltılmamış) tank */
+function aktifTankBul(kod){ return tanklar.find(t=>t.kod===kod && !t.bosaltildi); }
+function tankOzetMetni(t){
+  const g=gun(t);
+  return t.kod+' → '+(t.urun||'ürün yok')+', '+g+'. gün'+(t.kapasite?', '+t.kapasite:'');
+}
+/* dolum uygula: geçmişi koruyarak */
+function dolumYaz(t, veri, gecmisiKoru){
+  if(!gecmisiKoru){
+    // önceki partiyi arşivle, sonra ölçümleri temizle
+    if(t.urun||t.baslangic){
+      (t.gecmis=t.gecmis||[]).unshift({
+        urun:t.urun, baslangic:t.baslangic, bitis:t.bosaltildi||bugunISO(),
+        kapasite:t.kapasite, olcumSayi:(t.olcumler||[]).length
+      });
+      if(t.gecmis.length>20) t.gecmis.length=20;
+    }
+    t.olcumler=[]; t.kimyasallar=[];
+  }
+  Object.assign(t, veri);
+  delete t.bosaltildi; delete t.bosaltan; delete t.bosaltmaSaat;
+  delete t.temizlendi; delete t.temizleyen; delete t.temizlikSaat;
+  delete t.erkenBitiren; delete t.erkenTarih; delete t.hedefGunAsil; delete t.hedefDusuk;
+  t.olcumler=t.olcumler||[]; t.kimyasallar=t.kimyasallar||[];
+}
 function isEmriUret(tarih){
   const out=[];
   tanklar.forEach(t=>{
@@ -962,7 +1006,7 @@ function cizTanklar(){
   });
   const kgToplam=toplamKg();
   document.getElementById('hdr').innerHTML=`
-    <div class="top"><h1>🧪 Tanklar</h1><button class="icon" id="btnOkut">Okut</button>${yonetici?'<button class="icon" id="btnQR">QR</button><button class="icon" id="btnHizli">Hızlı Ekle</button>'+(veriYuklendi?'':'<button class="icon" id="btnVeri">Veri Yükle</button>')+'<button class="icon" id="btnYedek">Yedek</button>':''}<button class="icon" id="btnKilit">${yonetici?'🔓':'🔒'}</button></div>
+    <div class="top"><h1>🧪 Tanklar</h1><button class="icon" id="btnOkut">Okut</button>${yonetici?'<button class="icon" id="btnQR">QR</button><button class="icon" id="btnHizli">Hızlı Ekle</button><button class="icon" id="btnExcel">📊 Excel</button>'+(veriYuklendi?'':'<button class="icon" id="btnVeri">Veri Yükle</button>')+'<button class="icon" id="btnYedek">Yedek</button>':''}<button class="icon" id="btnKilit">${yonetici?'🔓':'🔒'}</button></div>
     <input id="ara" placeholder="Tank ara: A-14, biber…" value="${arama}" autocomplete="off">
     <div class="chips">${[['hepsi','Aktif'],['erken','⬇ Erken'],['hazir','Hazır'],['bugun','📅 Bugün Kapanacak'],['yakin','Yaklaşan'],['gecti','Geçen'],['dip','🧽 Temizlenecek'],['temiz','✓ Temiz']]
       .map(([k,ad])=>`<button class="chip" data-f="${k}" aria-pressed="${filtre===k}">${ad}<b>${say[k]||0}</b></button>`).join('')}`;
@@ -972,6 +1016,7 @@ function cizTanklar(){
     document.getElementById('btnYedek').onclick=yedek;
     if(!veriYuklendi){ document.getElementById('btnVeri').onclick=gercekVeriYukle; }
     document.getElementById('btnHizli').onclick=hizliEkle;
+    const bx=document.getElementById('btnExcel'); if(bx) bx.onclick=excelYukle;
     document.getElementById('btnQR').onclick=qrOlustur;
   }
   document.getElementById('ara').oninput=e=>{ arama=e.target.value; tankListesiCiz(); };
@@ -1074,9 +1119,10 @@ function cizIsEmri(){
       <button class="chip" data-u="hepsi" aria-pressed="${ieUrun==='hepsi'}">Tümü<b>${hepsiListe.length}</b></button>
       ${urunAdlari.map(u=>`<button class="chip" data-u="${u}" aria-pressed="${ieUrun===u}">${u}<b>${urunSay[u]}</b></button>`).join('')}
     </div>`:''}
-    ${grupHepsi['T']?`<div class="chips gorevChips" id="ieGorevChips">
+    ${(grupHepsi['T']||grupHepsi['U'])?`<div class="chips gorevChips" id="ieGorevChips">
       <button class="chip" data-g="hepsi" aria-pressed="${ieGorev==='hepsi'}">Tüm işler</button>
-      <button class="chip" data-g="T" aria-pressed="${ieGorev==='T'}">Sadece Tuz<b>${grupHepsi['T'].length}</b></button>
+      ${grupHepsi['T']?`<button class="chip" data-g="T" aria-pressed="${ieGorev==='T'}">Sadece Tuz<b>${grupHepsi['T'].length}</b></button>`:''}
+      ${grupHepsi['U']?`<button class="chip" data-g="U" aria-pressed="${ieGorev==='U'}">🔍 Ürün Kontrol<b>${grupHepsi['U'].length}</b></button>`:''}
     </div>`:''}`;
   if(document.getElementById('ieChips')){
     document.getElementById('ieChips').onclick=e2=>{
@@ -1882,16 +1928,20 @@ function detay(id){
 }
 
 /* ================= hızlı ekle (serbest metin, çoklu eylem) ================= */
+/* Türkçe büyük harfleri güvenli küçült: İ→i, I→ı, Ş/Ç/Ğ/Ö/Ü */
+function trKucuk(s){
+  return String(s||'').replace(/İ/g,'i').replace(/I/g,'ı').toLowerCase();
+}
 const URUN_DESENLERI=[
-  {re:/salatal[ıi]k[^0-9]{0,10}no\s*:?\s*1\b|no\s*:?\s*1[^a-z]{0,3}salatal[ıi]k/i, urun:'Salatalık No.1'},
-  {re:/salatal[ıi]k[^0-9]{0,10}no\s*:?\s*2\b|no\s*:?\s*2[^a-z]{0,3}salatal[ıi]k/i, urun:'Salatalık No.2'},
-  {re:/salatal[ıi]k[^0-9]{0,10}no\s*:?\s*3\b|no\s*:?\s*3[^a-z]{0,3}salatal[ıi]k/i, urun:'Salatalık No.3'},
+  {re:/salatal[ıi]k[^0-9]{0,12}no\s*[.:]?\s*1\b|no\s*[.:]?\s*1[^a-zçğıöşü]{0,3}salatal[ıi]k/i, urun:'Salatalık No.1'},
+  {re:/salatal[ıi]k[^0-9]{0,12}no\s*[.:]?\s*2\b|no\s*[.:]?\s*2[^a-zçğıöşü]{0,3}salatal[ıi]k/i, urun:'Salatalık No.2'},
+  {re:/salatal[ıi]k[^0-9]{0,12}no\s*[.:]?\s*3\b|no\s*[.:]?\s*3[^a-zçğıöşü]{0,3}salatal[ıi]k/i, urun:'Salatalık No.3'},
   {re:/salatal[ıi]k/i, urun:'Salatalık No.1'},
   {re:/domates/i, urun:'Domates'},
   {re:/lahana/i, urun:'Lahana'},
-  {re:/kelek/i, urun:'Kelek'},
+  {re:/kelek|kavanozluk/i, urun:'Kelek'},
   {re:/havu[cç]/i, urun:'Havuç'},
-  {re:/[şs]eftali/i, urun:'Şeftali Çağlası'},
+  {re:/[şs]eftal/i, urun:'Şeftali Çağlası'},
   {re:/acur/i, urun:'Acur'},
   {re:/[cç]orbac[ıi]|\bbiber\b/i, urun:'Çorbacı Biber'},
   {re:/erik/i, urun:'Erik Turşusu'}
@@ -1942,8 +1992,7 @@ function satirAyristir(satir){
   }
   const km=s.match(/(\d[\d.,]*)\s*kg/i);
   const miktar=km? +km[1].replace(/[.,]/g,'') : null;
-  let urun=null;
-  for(const d of URUN_DESENLERI){ if(d.re.test(s)){ urun=d.urun; break; } }
+  const urun=urunTani(s);
   if(!urun) return {hata:true, satir:s, neden:'Ürün anlaşılamadı'};
   return {hata:false, eylem:'dolum', kod, urun, miktar, satir:s};
 }
@@ -1957,7 +2006,11 @@ function hizliOnizleGoster(p, satirlarMetin){
   q('#hz_sonuc').innerHTML=`
     ${gecerli.length?`<h3>Uygulanacak (${gecerli.length})</h3>`+gecerli.map(x=>{
       let detay='';
-      if(x.eylem==='dolum') detay=`${x.urun}${x.miktar?` · <em>${x.miktar} kg</em>`:' · <span class="n">kilo yok</span>'}`;
+      if(x.eylem==='dolum'){
+        detay=`${x.urun}${x.miktar?` · <em>${x.miktar} kg</em>`:' · <span class="n">kilo yok</span>'}`;
+        const dolu=aktifTankBul(x.kod);
+        if(dolu) detay+=` <span class="n">⚠ DOLU: ${dolu.urun||'?'} ${gun(dolu)}. gün</span>`;
+      }
       else if(x.eylem==='olcum') detay=[x.ph&&`pH ${x.ph}`,x.tuz&&`Tuz ${x.tuz}`,x.sicaklik&&`${x.sicaklik}°`].filter(Boolean).join(' · ');
       else detay='';
       return `<div class="log"><span class="d">${x.kod}</span>
@@ -1969,24 +2022,44 @@ function hizliOnizleGoster(p, satirlarMetin){
   `;
   const btn=q('#hz_uygula');
   if(btn) btn.onclick=async()=>{
+    // DOLU TANK KONTROLÜ
+    const cakisan=gecerli.filter(x=>x.eylem==='dolum' && aktifTankBul(x.kod));
+    let cakismaKarari='atla';
+    if(cakisan.length){
+      const liste=cakisan.map(x=>{
+        const t=aktifTankBul(x.kod);
+        return '• '+tankOzetMetni(t)+'\n   → yenisi: '+x.urun+(x.miktar?', '+x.miktar+' kg':'');
+      }).join('\n');
+      const sec=await secimDialog(
+        cakisan.length+' tank zaten DOLU',
+        'Bu tanklarda hâlâ ürün var:\n\n'+liste+'\n\nNe yapayım?',
+        [{etiket:'Bu tankları atla, diğerlerini uygula', tur:'ana'},
+         {etiket:'Üzerine yaz (yeni parti — ölçümler sıfırlanır)'},
+         {etiket:'Sadece bilgiyi güncelle (ölçümler korunur)'}]);
+      if(sec===-1) return;
+      cakismaKarari = sec===0?'atla' : (sec===1?'yeniParti':'guncelle');
+    }
     window.__hizliOnceki=JSON.parse(JSON.stringify(tanklar));
     window.__hizliOncekiIs=JSON.parse(JSON.stringify(isemri));
-    let dolum=0, bosalt=0, olcum=0, devirdaim=0, bulunamadi=0;
+    let dolum=0, bosalt=0, olcum=0, devirdaim=0, bulunamadi=0, atlanan=0, guncellendi=0;
     const bugun=bugunISO();
     gecerli.forEach(x=>{
       const t=tanklar.find(tk=>tk.kod===x.kod&&!tk.bosaltildi);
       if(x.eylem==='dolum'){
         const veri={kod:x.kod, urun:x.urun, kapasite:x.miktar?(x.miktar+' kg'):'',
           baslangic:bugun, hedefGun:hedefGunHesapla(x.urun,(x.kod.match(/^[A-ZÇĞİÖŞÜ]/)||[''])[0]), notlar:''};
-        const bosOlan = t || tanklar.find(tk=>tk.kod===x.kod&&tk.bosaltildi);
-        if(bosOlan){
-          Object.assign(bosOlan,veri);
-          delete bosOlan.bosaltildi; delete bosOlan.bosaltan; delete bosOlan.bosaltmaSaat;
-          delete bosOlan.temizlendi; delete bosOlan.temizleyen; delete bosOlan.temizlikSaat;
-          delete bosOlan.erkenBitiren; delete bosOlan.erkenTarih; delete bosOlan.hedefGunAsil; delete bosOlan.hedefDusuk;
-          bosOlan.olcumler=[]; bosOlan.kimyasallar=[];
+        if(t){ // tank DOLU
+          if(cakismaKarari==='atla'){ atlanan++; return; }
+          if(cakismaKarari==='guncelle'){
+            // ölçüm/kimyasal korunur, dolum tarihi de korunur
+            t.urun=veri.urun; if(x.miktar) t.kapasite=veri.kapasite;
+            guncellendi++; return;
+          }
+          dolumYaz(t, veri, false); dolum++; return;
         }
-        else{ tanklar.push({id:'t'+Date.now()+'_'+Math.random().toString(36).slice(2,7),...veri,bosaltildi:'',olcumler:[]}); }
+        const bosOlan = tanklar.find(tk=>tk.kod===x.kod&&tk.bosaltildi);
+        if(bosOlan){ dolumYaz(bosOlan, veri, false); }
+        else{ tanklar.push({id:'t'+Date.now()+'_'+Math.random().toString(36).slice(2,7),...veri,bosaltildi:'',olcumler:[],kimyasallar:[]}); }
         dolum++;
       }else if(!t){
         bulunamadi++;
@@ -2005,7 +2078,7 @@ function hizliOnizleGoster(p, satirlarMetin){
       }
     });
     await sSet(K_TANK,tanklar); await sSet(K_IS,isemri);
-    const ozet=[dolum&&`${dolum} dolum`,bosalt&&`${bosalt} boşaltma`,olcum&&`${olcum} ölçüm`,devirdaim&&`${devirdaim} devirdaim`,bulunamadi&&`${bulunamadi} eşleşmedi`].filter(Boolean).join(', ');
+    const ozet=[dolum&&`${dolum} dolum`,guncellendi&&`${guncellendi} güncelleme`,atlanan&&`${atlanan} atlandı (dolu)`,bosalt&&`${bosalt} boşaltma`,olcum&&`${olcum} ölçüm`,devirdaim&&`${devirdaim} devirdaim`,bulunamadi&&`${bulunamadi} eşleşmedi`].filter(Boolean).join(', ');
     q('#hz_sonuc').innerHTML=`<p class="hint">${ozet||'İşlem yok'}</p><button class="btn ghost" id="hz_geriAl">Geri Al</button><button class="btn" id="hz_bitti">Tamam</button>`;
     ciz();
     q('#hz_geriAl').onclick=async()=>{
@@ -2014,6 +2087,232 @@ function hizliOnizleGoster(p, satirlarMetin){
       kapat(); ciz(); toast('Geri alındı');
     };
     q('#hz_bitti').onclick=()=>{ kapat(); };
+  };
+}
+/* ================= EXCEL / CSV TANK YÜKLEME ================= */
+function urunTani(metin){
+  const s=trKucuk(metin);
+  for(const d of URUN_DESENLERI){ if(d.re.test(s)) return d.urun; }
+  return null;
+}
+/* Ayrıştırılan ürün adını programdaki gerçek ada eşle */
+function urunEsle(ad){
+  if(!ad) return ad;
+  if(program && program[ad]) return ad;
+  const hedef=urunTani(ad)||ad;
+  if(program && program[hedef]) return hedef;
+  for(const k of Object.keys(program||{})){
+    if(k===ad) return k;
+    if(trKucuk(k)===trKucuk(ad)) return k;
+    const kk=urunTani(k);
+    if(kk && kk===hedef) return k;
+  }
+  return hedef;
+}
+function basligiTani(h){
+  const s=String(h||'').toLocaleLowerCase('tr').replace(/\s+/g,'').replace(/\./g,'');
+  // --- ERP (Hücre Kodu / Stok Adı / Seri Bakiye / Seri No) ---
+  if(/h[üu]crekodu|tankkodu|tankno/.test(s)) return 'kod';
+  if(/stokad|[üu]r[üu]nad|malad/.test(s)) return 'urun';
+  if(/seribakiye|netbakiye|bakiye/.test(s)) return 'kg';
+  if(/serino2/.test(s)) return null;
+  if(/serino/.test(s)) return 'tarih';
+  if(/stokkodu|yapkodu|depokodu/.test(s)) return null;
+  // --- genel ---
+  if(/hedef|s[üu]re/.test(s)) return 'hedef';
+  if(/dolum|ba[şs]lang|tarih|giri[şs]/.test(s)) return 'tarih';
+  if(/[üu]r[üu]n|cins|mal$/.test(s)) return 'urun';
+  if(/kg|kilo|miktar|kapasite|tonaj/.test(s)) return 'kg';
+  if(/^tank|^kod$/.test(s)) return 'kod';
+  return null;
+}
+function tarihCevir(v){
+  if(v===null||v===undefined||v==='') return null;
+  if(v instanceof Date && !isNaN(v)) return v.toISOString().slice(0,10);
+  const s=String(v).trim();
+  let m=s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if(m) return m[1]+'-'+String(m[2]).padStart(2,'0')+'-'+String(m[3]).padStart(2,'0');
+  m=s.match(/^(\d{1,2})[.\/-](\d{1,2})[.\/-](\d{2,4})/);
+  if(m){ let y=m[3]; if(y.length===2) y='20'+y;
+    return y+'-'+String(m[2]).padStart(2,'0')+'-'+String(m[1]).padStart(2,'0'); }
+  if(/^\d+(\.\d+)?$/.test(s)){ // Excel seri numarası
+    const g=Math.floor(+s);
+    if(g>20000&&g<80000){ const d=new Date(Date.UTC(1899,11,30)); d.setUTCDate(d.getUTCDate()+g); return d.toISOString().slice(0,10); }
+  }
+  return null;
+}
+function satirlariTanka(satirlar){
+  if(!satirlar.length) return {kayitlar:[], hata:'Dosya boş'};
+  let bas=-1, harita=null;
+  for(let i=0;i<Math.min(10,satirlar.length);i++){
+    const h={}; let sayac=0;
+    satirlar[i].forEach((hc,j)=>{ const t=basligiTani(hc); if(t&&h[t]===undefined){ h[t]=j; sayac++; } });
+    if(h.kod!==undefined && sayac>=2){ bas=i; harita=h; break; }
+  }
+  if(bas<0) return {kayitlar:[], hata:'Başlık satırı bulunamadı. Sütunlarda "Hücre Kodu"/"Tank", "Stok Adı"/"Ürün" gibi başlıklar olmalı.'};
+  const kayitlar=[];
+  let sonUrunHam='';   // ERP: ürün adı yalnız grubun ilk satırında yazar
+  for(let i=bas+1;i<satirlar.length;i++){
+    const r=satirlar[i]; if(!r||!r.length) continue;
+    // ara toplam satırlarını atla
+    if(r.some(h=>/^toplam$/i.test(String(h||'').trim()))) continue;
+    if(harita.urun!==undefined){
+      const u=String(r[harita.urun]||'').trim();
+      if(u) sonUrunHam=u;
+    }
+    const kodHam=String(r[harita.kod]||'').trim();
+    if(!kodHam) continue;
+    const kod=kodBul(kodHam)||kodHam.toLocaleUpperCase('tr').replace(/\s+/g,'');
+    if(!/^[A-ZÇĞİÖŞÜ]-?\d+/i.test(kod)) continue;
+    const urunHam=sonUrunHam;
+    let urun=null;
+    if(urunHam){ urun=urunEsle(urunTani(urunHam) || urunHam); }
+    const kgHam=harita.kg!==undefined? String(r[harita.kg]||'').replace(/[^\d]/g,'') : '';
+    const tarih=harita.tarih!==undefined? tarihCevir(r[harita.tarih]) : null;
+    const hedef=harita.hedef!==undefined? parseInt(String(r[harita.hedef]).replace(/[^\d]/g,''),10) : null;
+    kayitlar.push({kod, urun, kg:kgHam?+kgHam:null, tarih, hedef:(hedef&&hedef>0&&hedef<200)?hedef:null});
+  }
+  return {kayitlar, hata:kayitlar.length?null:'Geçerli tank satırı bulunamadı'};
+}
+function csvSatirAyir(metin){
+  return metin.split(/\r?\n/).filter(s=>s.trim()).map(satir=>{
+    const ayrac = (satir.split(';').length > satir.split(',').length) ? ';' : ',';
+    const out=[]; let cur='', tirnak=false;
+    for(let i=0;i<satir.length;i++){
+      const ch=satir[i];
+      if(ch==='"'){ if(tirnak&&satir[i+1]==='"'){cur+='"';i++;} else tirnak=!tirnak; }
+      else if(ch===ayrac && !tirnak){ out.push(cur); cur=''; }
+      else cur+=ch;
+    }
+    out.push(cur);
+    return out.map(s=>s.trim());
+  });
+}
+function excelYukle(){
+  const p=panel(`
+    <div class="pbar"><h2>Excel / CSV Tank Yükleme</h2><button class="icon" data-kapat>Kapat</button></div>
+    <p class="hint">Excel dosyasında sütun başlıkları olmalı: <b>Tank</b> (zorunlu), <b>Ürün</b>, <b>Kg</b>, <b>Dolum tarihi</b>, <b>Hedef gün</b>. Sütun sırası önemli değil.</p>
+    <input type="file" id="ex_dosya" accept=".csv,.xlsx,.xlsm,.xls,.ods,text/csv" style="margin-bottom:10px">
+    <p class="hint">Dosya seçemiyorsan Excel'de hücreleri kopyalayıp aşağıya yapıştır:</p>
+    <textarea id="ex_metin" rows="5" placeholder="Tank;Ürün;Kg;Dolum
+A-002;Salatalık No.2;11294;06.07.2026"></textarea>
+    <button class="btn ghost" id="ex_metinOku">Yapıştırılanı Oku</button>
+    <div id="ex_sonuc"></div>
+  `);
+  const q=s=>p.querySelector(s);
+
+  q('#ex_dosya').onchange=async e=>{
+    const f=e.target.files[0]; if(!f) return;
+    const ad=f.name.toLocaleLowerCase('tr');
+    try{
+      if(/\.(xlsx|xlsm|xls|ods)$/.test(ad)){
+        toast('Excel okunuyor…');
+        if(!window.XLSX){
+          await new Promise((res,rej)=>{
+            const sc=document.createElement('script');
+            sc.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+            sc.onload=res; sc.onerror=()=>rej(new Error('Excel kütüphanesi indirilemedi'));
+            document.head.appendChild(sc);
+          });
+        }
+        const buf=await f.arrayBuffer();
+        const wb=XLSX.read(buf,{type:'array',cellDates:true});
+        const sh=wb.Sheets[wb.SheetNames[0]];
+        const satirlar=XLSX.utils.sheet_to_json(sh,{header:1,raw:true,defval:''});
+        excelOnizle(p, satirlar);
+      }else{
+        const metin=await f.text();
+        excelOnizle(p, csvSatirAyir(metin));
+      }
+    }catch(err){
+      q('#ex_sonuc').innerHTML='<p class="hint" style="color:var(--alarm)">Okunamadı: '+err.message+'<br>İnternet yoksa Excel\'i "CSV (ayraçlı)" olarak kaydedip tekrar dene.</p>';
+    }
+  };
+  q('#ex_metinOku').onclick=()=>{
+    const m=q('#ex_metin').value;
+    if(!m.trim()){ toast('Alan boş'); return; }
+    excelOnizle(p, csvSatirAyir(m.replace(/\t/g,';')));
+  };
+}
+function excelOnizle(p, satirlar){
+  const q=s=>p.querySelector(s);
+  const {kayitlar, hata}=satirlariTanka(satirlar);
+  if(hata){ q('#ex_sonuc').innerHTML='<p class="hint" style="color:var(--alarm)">'+hata+'</p>'; return; }
+  const yeni=[], guncel=[], yenidenDolum=[];
+  kayitlar.forEach(k=>{
+    const aktif=aktifTankBul(k.kod);
+    const bos=tanklar.find(t=>t.kod===k.kod&&t.bosaltildi);
+    if(aktif) guncel.push({k, t:aktif});
+    else if(bos) yenidenDolum.push({k, t:bos});
+    else yeni.push({k});
+  });
+  q('#ex_sonuc').innerHTML=`
+    <div class="sec">Önizleme — ${kayitlar.length} satır</div>
+    <div class="dstat">
+      <div class="dkart"><span>Yeni tank</span><b>${yeni.length}</b></div>
+      <div class="dkart"><span>Dolu (güncellenecek)</span><b>${guncel.length}</b></div>
+      <div class="dkart"><span>Boş tanka dolum</span><b>${yenidenDolum.length}</b></div>
+    </div>
+    ${guncel.length?`<div class="sec">Bu tanklar DOLU</div>
+      <p class="hint">Ölçüm ve kimyasal geçmişleri korunacak, sadece ürün/kg bilgisi güncellenecek.</p>
+      ${guncel.slice(0,25).map(x=>`<div class="log"><span class="d">${x.k.kod}</span><span class="v">${tankOzetMetni(x.t)}<br><span class="n">→ ${x.k.urun||'—'}${x.k.kg?', '+x.k.kg+' kg':''}</span></span></div>`).join('')}
+      ${guncel.length>25?`<p class="hint">… ve ${guncel.length-25} tank daha</p>`:''}`:''}
+    ${yeni.length?`<div class="sec">Yeni eklenecek</div>
+      ${yeni.slice(0,25).map(x=>`<div class="log"><span class="d">${x.k.kod}</span><span class="v">${x.k.urun||'—'}${x.k.kg?' · '+x.k.kg+' kg':''}${x.k.tarih?' · '+x.k.tarih:''}</span></div>`).join('')}
+      ${yeni.length>25?`<p class="hint">… ve ${yeni.length-25} tank daha</p>`:''}`:''}
+    ${(()=>{
+      const urunler=[...new Set(kayitlar.map(k=>k.urun).filter(Boolean))];
+      const programsiz=urunler.filter(u=>!program[u]||!Object.keys(program[u]).length);
+      const bugun=new Date(bugunISO());
+      const eski=kayitlar.filter(k=>{ if(!k.tarih) return false;
+        return (bugun-new Date(k.tarih))/86400000 > 90; });
+      return (programsiz.length?`<div class="sec">Programı olmayan ürünler</div>
+        <p class="hint">Bu ürünler için bakım programı tanımlı değil, tankları İş Emri'nde görev üretmez:<br><b>${programsiz.join(', ')}</b><br>Program sekmesinden ekleyebilirsin.</p>`:'')
+        + (eski.length?`<p class="hint">ℹ ${eski.length} tankın dolum tarihi 90 günden eski (en eskisi ${eski.map(k=>k.tarih).sort()[0]}). Bunlar listede "süre geçti" görünecek.</p>`:'');
+    })()}
+    <p class="hint">⚠ Dosyada olmayan tanklara <b>dokunulmaz</b>, hiçbir kayıt silinmez.</p>
+    <button class="btn" id="ex_uygula">${kayitlar.length} satırı uygula</button>
+  `;
+  q('#ex_uygula').onclick=async()=>{
+    let secim=1;
+    if(guncel.length){
+      secim=await secimDialog(guncel.length+' tank dolu',
+        'Bu tanklarda hâlâ ürün var. Ne yapayım?',
+        [{etiket:'Bilgiyi güncelle, geçmişi koru', tur:'ana'},
+         {etiket:'Yeni parti başlat (ölçümler sıfırlanır)'},
+         {etiket:'Dolu tankları atla'}]);
+      if(secim===-1) return;
+    }
+    window.__exOnceki=JSON.parse(JSON.stringify(tanklar));
+    let eklendi=0, guncellendi=0, atlandi=0, partiYeni=0;
+    const bugun=bugunISO();
+    kayitlar.forEach(k=>{
+      const veri={kod:k.kod, urun:k.urun||'', kapasite:k.kg?(k.kg+' kg'):'',
+        baslangic:k.tarih||bugun,
+        hedefGun:k.hedef||hedefGunHesapla(k.urun,(k.kod.match(/^[A-ZÇĞİÖŞÜ]/)||[''])[0]), notlar:''};
+      const aktif=aktifTankBul(k.kod);
+      if(aktif){
+        if(secim===2){ atlandi++; return; }
+        if(secim===0){
+          if(k.urun) aktif.urun=k.urun;
+          if(k.kg) aktif.kapasite=k.kg+' kg';
+          if(k.tarih) aktif.baslangic=k.tarih;
+          if(k.hedef) aktif.hedefGun=k.hedef;
+          guncellendi++; return;
+        }
+        dolumYaz(aktif, veri, false); partiYeni++; return;
+      }
+      const bos=tanklar.find(t=>t.kod===k.kod&&t.bosaltildi);
+      if(bos){ dolumYaz(bos, veri, false); eklendi++; return; }
+      tanklar.push({id:'t'+Date.now()+'_'+Math.random().toString(36).slice(2,7),...veri,bosaltildi:'',olcumler:[],kimyasallar:[]});
+      eklendi++;
+    });
+    await sSet(K_TANK,tanklar);
+    q('#ex_sonuc').innerHTML=`<p class="hint">${[eklendi&&eklendi+' tank eklendi/dolduruldu',guncellendi&&guncellendi+' güncellendi',partiYeni&&partiYeni+' yeni parti',atlandi&&atlandi+' atlandı'].filter(Boolean).join(', ')||'İşlem yok'}</p>
+      <button class="btn ghost" id="ex_geri">Geri Al</button><button class="btn" id="ex_bitti">Tamam</button>`;
+    ciz();
+    q('#ex_geri').onclick=async()=>{ if(window.__exOnceki){ tanklar=window.__exOnceki; await sSet(K_TANK,tanklar); } kapat(); ciz(); toast('Geri alındı'); };
+    q('#ex_bitti').onclick=()=>kapat();
   };
 }
 function sesliGirisDestek(){
