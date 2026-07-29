@@ -406,6 +406,23 @@ async function fbSet(k,v){
     return false;
   }
 }
+/* Firebase anahtarlarında . # $ [ ] / kullanılamaz — ürün adlarını kodla */
+const FB_ESC={'.':'~d~','#':'~h~','$':'~s~','[':'~lb~',']':'~rb~','/':'~sl~'};
+function fbAnahtarKodla(s){ return String(s).replace(/[.#$\[\]\/]/g, m=>FB_ESC[m]); }
+function fbAnahtarCoz(s){ return String(s).replace(/~d~/g,'.').replace(/~h~/g,'#').replace(/~s~/g,'$').replace(/~lb~/g,'[').replace(/~rb~/g,']').replace(/~sl~/g,'/'); }
+function nesneKodla(o){ const r={}; Object.keys(o||{}).forEach(k=>{ r[fbAnahtarKodla(k)]=o[k]; }); return r; }
+function nesneCoz(o){ if(!o||typeof o!=='object') return o; const r={}; Object.keys(o).forEach(k=>{ r[fbAnahtarCoz(k)]=o[k]; }); return r; }
+async function progKaydet(){
+  program=programNormalize(program);
+  const ok=await fbSet(K_PROG, nesneKodla(program));
+  try{ localStorage.setItem(K_PROG, JSON.stringify(program)); }catch(e){}
+  return ok;
+}
+async function hedefKaydet(){
+  const ok=await fbSet(K_HEDEF, nesneKodla(urunHedef));
+  try{ localStorage.setItem(K_HEDEF, JSON.stringify(urunHedef)); }catch(e){}
+  return ok;
+}
 function programNormalize(p){
   if(!p||typeof p!=='object') return {};
   const out={};
@@ -486,11 +503,11 @@ async function simdiSenkronEt(){
   }
   const [t,i,dv,pe,uh]=await Promise.all([fbGet(K_TANK),fbGet(K_IS),fbGet(K_DEV),fbGet(K_PERSONEL),fbGet(K_HEDEF)]);
   if(t!==undefined) tanklar=t;
-  if(pd.data!==undefined) program=programNormalize(pd.data);
+  if(pd.data!==undefined) program=programNormalize(nesneCoz(pd.data));
   if(i!==undefined) isemri=i;
   if(dv!==undefined) devirdaimSure=dv;
   if(pe!==undefined) personel=pe;
-  if(uh!==undefined) urunHedef=uh;
+  if(uh!==undefined) urunHedef=nesneCoz(uh);
   ciz();
   toast('Bulut ile eşitlendi');
 }
@@ -503,10 +520,10 @@ function canliSenkronBaslat(){
     const p = pd.ok ? pd.data : undefined;
     if(dv!==undefined) devirdaimSure=dv;
     if(pe!==undefined) personel=pe;
-    const uh=await fbGet(K_HEDEF); if(uh!==undefined) urunHedef=uh;
+    const uh=await fbGet(K_HEDEF); if(uh!==undefined) urunHedef=nesneCoz(uh);
     let degisti=false;
     if(t!==undefined && JSON.stringify(t)!==JSON.stringify(tanklar)){ tanklar=t; degisti=true; }
-    if(p!==undefined){ const pN=programNormalize(p); if(JSON.stringify(pN)!==JSON.stringify(program)){ program=pN; degisti=true; } }
+    if(p!==undefined){ const pN=programNormalize(nesneCoz(p)); if(JSON.stringify(pN)!==JSON.stringify(program)){ program=pN; degisti=true; } }
     if(i!==undefined && JSON.stringify(i)!==JSON.stringify(isemri)){ isemri=i; degisti=true; }
     if(degisti){ if(qrGoruntuKod) cizTankIsEmri(qrGoruntuKod); else ciz(); }
   },15000);
@@ -1337,7 +1354,7 @@ async function programSablonYukle(dosya){
     '.\n\nMevcut programın YERİNE geçecek. Devam?', 'Yükle');
   if(!ok) return;
   program=yeni;
-  await sSet(K_PROG,program);
+  await progKaydet();
   cizProgram();
   toast(satirSay+' gün yüklendi');
 }
@@ -1350,14 +1367,14 @@ function cizProgram(){
   if(yonetici){
     document.getElementById('pSifirla').onclick=async()=>{
       if(!confirm('Tüm program varsayılana (Excel şablonu) dönsün mü?')) return;
-      program=varsayilanProgram(); await sSet(K_PROG,program); cizProgram(); toast('Sıfırlandı');
+      program=varsayilanProgram(); await progKaydet(); cizProgram(); toast('Sıfırlandı');
     };
     document.getElementById('pYeni').onclick=async()=>{
       const ad=(prompt('Yeni ürün adı (örn: Biber Salçalık):')||'').trim();
       if(!ad) return;
       if(program[ad]){ progUrun=ad; cizProgram(); toast('Bu ürün zaten var'); return; }
       program[ad]={}; progUrun=ad;
-      await sSet(K_PROG,program); cizProgram(); toast(ad+' eklendi — şimdi gün ekle');
+      await progKaydet(); cizProgram(); toast(ad+' eklendi — şimdi gün ekle');
     };
   }
   document.getElementById('btnKilit').onclick=yoneticiGirisi;
@@ -1370,11 +1387,10 @@ function cizProgram(){
       'Gönder');
     if(!ok) return;
     program=programNormalize(program);
-    const basarili=await fbSet(K_PROG,program);
+    const basarili=await progKaydet();
     if(basarili){
-      await sSet(K_PROG,program);
       await fbSet(K_DEV,devirdaimSure);
-      await fbSet(K_HEDEF,urunHedef);
+      await hedefKaydet();
       await onayDialog('Gönderildi','Program buluta yazıldı.\n\nDiğer cihazlarda uygulamayı kapatıp açın, sonra Program sekmesinde 🔄 düğmesine dokunun.','Tamam');
     }
     cizProgram();
@@ -1518,7 +1534,7 @@ function cizProgram(){
         if(gun(t)>=yeniG) t.hedefDusuk=true; else delete t.hedefDusuk;
         t.hedefGun=yeniG; n++;
       });
-      await sSet(K_HEDEF,urunHedef);
+      await hedefKaydet();
       if(n) await sSet(K_TANK,tanklar);
       cizProgram();
       toast(progUrun+' kaydedildi'+(n?' · '+n+' tank güncellendi':''));
@@ -1569,11 +1585,11 @@ function programGun(d){
     ['A','B','C','D','E'].forEach(s=>{const v=+pn.querySelector('#tz'+s).value;if(v)tuz[s]=v;});
     up[d]={g,tuz};
     program=programNormalize(program);
-    await sSet(K_PROG,program); kapat(); cizProgram(); toast(d+'. gün kaydedildi · diğer cihazlara gidiyor');
+    await progKaydet(); kapat(); cizProgram(); toast(d+'. gün kaydedildi · diğer cihazlara gidiyor');
   };
   pn.querySelector('#pSil').onclick=async()=>{
     delete up[d];
-    await sSet(K_PROG,program); kapat(); cizProgram(); toast(d+'. gün silindi');
+    await progKaydet(); kapat(); cizProgram(); toast(d+'. gün silindi');
   };
 }
 
@@ -1625,7 +1641,7 @@ function form(id){
     if(e.target.value!=='__yeni__') return;
     const ad=(prompt('Yeni ürün adı:')||'').trim();
     if(ad){
-      if(!program[ad]){ program[ad]={}; await sSet(K_PROG,program); }
+      if(!program[ad]){ program[ad]={}; await progKaydet(); }
       const opt=document.createElement('option'); opt.textContent=ad; opt.selected=true;
       e.target.insertBefore(opt, e.target.querySelector('option[value="__yeni__"]'));
       toast(ad+' eklendi. Program sekmesinden günlerini tanımla.');
@@ -2469,7 +2485,7 @@ function yedek(){
       const v=JSON.parse(q('#y_metin').value);
       if(Array.isArray(v)){ tanklar=v; }
       else{ tanklar=v.tanklar||[]; if(v.program) program=v.program; }
-      await sSet(K_TANK,tanklar); await sSet(K_PROG,program);
+      await sSet(K_TANK,tanklar); await progKaydet();
       kapat(); ciz(); toast('Yedek yüklendi');
     }catch(e){ toast('Metin okunamadı'); }
   };
@@ -2480,7 +2496,7 @@ function yedek(){
   tanklar=await sGet(K_TANK,[]);
   const progDurum=await fbGetDurum(K_PROG);
   if(progDurum.ok && progDurum.data!==undefined){
-    program=programNormalize(progDurum.data);
+    program=programNormalize(nesneCoz(progDurum.data));
     try{ localStorage.setItem(K_PROG,JSON.stringify(program)); }catch(e){}
   }else{
     // Firebase'e ulaşılamadı ya da veri yok → yerel kopyayı kullan, ÜZERİNE YAZMA
@@ -2489,13 +2505,13 @@ function yedek(){
   if(!Object.keys(program).length){
     program=varsayilanProgram();
     // varsayılanı yalnızca Firebase gerçekten boşsa yaz (bağlantı hatasında yazma!)
-    if(progDurum.ok) await sSet(K_PROG,program);
+    if(progDurum.ok) await progKaydet();
   }
   isemri=await sGet(K_IS,{});
   veriYuklendi=!!(await sGet(K_VERI,false));
   devirdaimSure=await sGet(K_DEV,{...DEV_VARSAYILAN});
   personel=await sGet(K_PERSONEL,[]);
-  urunHedef=await sGet(K_HEDEF,{});
+  urunHedef=nesneCoz(await sGet(K_HEDEF,{}))||{};
   /* eski sürümden gelen ürün adlarını eşle */
   const esle={'Salatalık No.1':'Salatalık No.1'};
   tanklar.forEach(t=>{ if(t.urun&&!program[t.urun]){ const k=Object.keys(program).find(u=>u.toLocaleLowerCase('tr')===t.urun.toLocaleLowerCase('tr')); if(k) t.urun=k; } });
