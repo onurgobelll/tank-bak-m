@@ -1362,6 +1362,23 @@ function cizProgram(){
   }
   document.getElementById('btnKilit').onclick=yoneticiGirisi;
   const bs=document.getElementById('btnSenk'); if(bs) bs.onclick=simdiSenkronEt;
+  const bg2=document.getElementById('bulutGonder');
+  if(bg2) bg2.onclick=async()=>{
+    const gunSay=Object.values(program).reduce((n,u)=>n+Object.keys(u).length,0);
+    const ok=await onayDialog('Programı Buluta Gönder',
+      Object.keys(program).length+' ürün · '+gunSay+' gün.\n\nBuluttaki program bu telefondakiyle değiştirilecek ve tüm cihazlara dağıtılacak. Devam?',
+      'Gönder');
+    if(!ok) return;
+    program=programNormalize(program);
+    const basarili=await fbSet(K_PROG,program);
+    if(basarili){
+      await sSet(K_PROG,program);
+      await fbSet(K_DEV,devirdaimSure);
+      await fbSet(K_HEDEF,urunHedef);
+      await onayDialog('Gönderildi','Program buluta yazıldı.\n\nDiğer cihazlarda uygulamayı kapatıp açın, sonra Program sekmesinde 🔄 düğmesine dokunun.','Tamam');
+    }
+    cizProgram();
+  };
   const bt=document.getElementById('bulutTest');
   if(bt) bt.onclick=async()=>{
     toast('Test ediliyor…');
@@ -1427,6 +1444,8 @@ function cizProgram(){
         ? '<b style="color:var(--alarm)">Bağlantı sorunu</b> — '+(bulutDurum.mesaj||'')+'<br>Cihazlar birbirini göremiyor. Firebase → Realtime Database → Rules ayarını kontrol et.'
         : (bulutDurum.okuma===true? '<b style="color:var(--yesil)">Bağlı</b> — veriler tüm cihazlarla paylaşılıyor.' : 'Durum bilinmiyor — 🔄 ile test et.')}</p>
     <button class="btn ghost" id="bulutTest" style="margin-top:10px">Bağlantıyı Test Et</button>
+    ${yonetici?`<button class="btn ghost" id="bulutGonder" style="margin-top:8px">⬆ Bu Cihazdaki Programı Buluta Gönder</button>
+    <p class="hint">Buluttaki programın üzerine bu telefondakini yazar. Diğer cihazlar eski veriyi gösteriyorsa kullan.</p>`:''}
   </div>
   <div class="sec">Personel &amp; Cihaz</div>
   <div class="grafKutu" id="persKutu">
