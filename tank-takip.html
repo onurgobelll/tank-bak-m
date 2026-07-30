@@ -1142,11 +1142,15 @@ function cizIsEmri(){
     grup=yeni;
   }
   let toplamGorev=0, bitti=0, tuzToplam=0;
-  Object.entries(grup).forEach(([k,arr])=>arr.forEach(x=>{
-    toplamGorev++;
-    if(done[x.t.id+':'+k]) bitti++;
-    if(k==='T') tuzToplam+=(x.tuzKg||0);
-  }));
+  Object.entries(grupHepsi).forEach(([k,arr])=>{
+    if(ieUrun!=='hepsi' && !arr.some(x=>x.t.urun===ieUrun)) return;
+    arr.forEach(x=>{
+      if(ieUrun!=='hepsi' && x.t.urun!==ieUrun) return;
+      toplamGorev++;
+      if(done[x.t.id+':'+k]) bitti++;
+      if(k==='T') tuzToplam+=(x.tuzKg||0);
+    });
+  });
 
   document.getElementById('hdr').innerHTML=`
     <div class="top"><h1>İş Emri</h1><button class="icon" id="btnOkut">Okut</button><button class="icon" id="btnRapor">Rapor</button><button class="icon" id="btnPay">Paylaş</button><button class="icon" id="btnKilit">${yonetici?'🔓':'🔒'}</button></div>
@@ -2217,7 +2221,7 @@ function satirlariTanka(satirlar){
   }
   return {kayitlar, hata:kayitlar.length?null:'Geçerli tank satırı bulunamadı'};
 }
-function csvSatirAyir(metin){
+function csvTumSatirlar(metin){
   return metin.split(/\r?\n/).filter(s=>s.trim()).map(satir=>{
     const ayrac = (satir.split(';').length > satir.split(',').length) ? ';' : ',';
     const out=[]; let cur='', tirnak=false;
@@ -2265,7 +2269,7 @@ A-002;Salatalık No.2;11294;06.07.2026"></textarea>
         excelOnizle(p, satirlar);
       }else{
         const metin=await f.text();
-        excelOnizle(p, csvSatirAyir(metin));
+        excelOnizle(p, csvTumSatirlar(metin));
       }
     }catch(err){
       q('#ex_sonuc').innerHTML='<p class="hint" style="color:var(--alarm)">Okunamadı: '+err.message+'<br>İnternet yoksa Excel\'i "CSV (ayraçlı)" olarak kaydedip tekrar dene.</p>';
@@ -2274,7 +2278,7 @@ A-002;Salatalık No.2;11294;06.07.2026"></textarea>
   q('#ex_metinOku').onclick=()=>{
     const m=q('#ex_metin').value;
     if(!m.trim()){ toast('Alan boş'); return; }
-    excelOnizle(p, csvSatirAyir(m.replace(/\t/g,';')));
+    excelOnizle(p, csvTumSatirlar(m.replace(/\t/g,';')));
   };
 }
 function excelOnizle(p, satirlar){
