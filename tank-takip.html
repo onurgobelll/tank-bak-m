@@ -802,6 +802,45 @@ function bugunBakimRaporu(){
   }
   return kayitlar;
 }
+function tankListesiIndir(){
+  const bugun=bugunISO();
+  const aktif=tanklar.filter(t=>!t.bosaltildi).slice().sort((a,b)=>{
+    const sira={'Salatalık No.1':1,'Salatalık No.2':2,'Salatalık No.3':3,
+      'Lahana':4,'Şeftali Çağlası':5,'Kelek':6,'Domates':7,'Havuç':8};
+    const sa=sira[a.urun]||99, sb=sira[b.urun]||99;
+    return sa!==sb ? sa-sb : a.kod.localeCompare(b.kod,'tr',{numeric:true});
+  });
+  const basBom='﻿';
+  const satirlar=[['Tank Kodu','Ürün','Kapasite (kg)','Dolum Tarihi','Gün','Hedef Gün','Durum']];
+  const urunOz={};
+  aktif.forEach(t=>{
+    const g=gun(t);
+    const hg=t.hedefGun||30;
+    const d=g>=hg?'Hazır/Süre Geçti':g>=hg-3?'Yaklaşıyor':'Fermantasyonda';
+    const kg=(t.kapasite||'').replace(/[^0-9.]/g,'');
+    satirlar.push([t.kod, t.urun||'', kg?+kg:'', t.baslangic||'', g, hg, d]);
+    if(!urunOz[t.urun]) urunOz[t.urun]={n:0,kg:0};
+    urunOz[t.urun].n++; urunOz[t.urun].kg+=kg?+kg:0;
+  });
+  // Boş satır + özet
+  satirlar.push([]);
+  satirlar.push(['ÜRÜN ÖZETİ','','','','','','']);
+  satirlar.push(['Ürün','Tank Sayısı','Toplam kg','','','','']);
+  Object.entries(urunOz).sort((a,b)=>b[1].kg-a[1].kg).forEach(([u,v])=>{
+    satirlar.push([u, v.n, v.kg,'','','','']);
+  });
+  satirlar.push(['TOPLAM', aktif.length,
+    Object.values(urunOz).reduce((s,v)=>s+v.kg,0),'','','','']);
+  const csv=basBom+satirlar.map(r=>r.map(h=>{
+    const s=String(h??'');
+    return s.includes(';')||s.includes('"')?'"'+s.replace(/"/g,'""')+'"':s;
+  }).join(';')).join('\r\n');
+  const a=document.createElement('a');
+  a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(csv);
+  a.download='tank-listesi-'+bugun+'.csv';
+  a.click();
+  toast(aktif.length+' tank · CSV indirildi (Excel ile açın)');
+}
 function csvIndir(ad, satirlar){
   const bom='\ufeff';
   const icerik=bom+satirlar.map(r=>r.map(x=>('"'+String(x??'').replace(/"/g,'""')+'"')).join(';')).join('\n');
@@ -812,7 +851,7 @@ function csvIndir(ad, satirlar){
 }
 function cizOzet(){
   document.getElementById('hdr').innerHTML=`
-    <div class="top"><h1>Özet</h1><button class="icon" id="btnKilit">${yonetici?'🔓':'🔒'}</button></div>`;
+    <div class="top"><h1>Özet</h1><button class="icon" id="btnTankIndir">⬇ Tank Listesi</button><button class="icon" id="btnKilit">${yonetici?'🔓':'🔒'}</button></div>`;
   document.getElementById('btnKilit').onclick=yoneticiGirisi;
   const bugun=bugunISO();
   const bugunListe=isEmriUret(bugun);
@@ -957,7 +996,8 @@ function cizOzet(){
     document.getElementById('erkenGit').onclick=()=>{ gorunum='tanklar'; filtre='erken'; ciz(); };
   }
   if(document.getElementById('raporPay')){
-    document.getElementById('raporPay').onclick=()=>{
+    const bti=document.getElementById('btnTankIndir'); if(bti) bti.onclick=tankListesiIndir;
+  document.getElementById('raporPay').onclick=()=>{
       let m='BAKIM RAPORU (son 7 gün)\n\n';
       rapor.forEach(r=>{ m+=`${kisaTarih(r.tarih)} · ${r.kod} · ${r.gorev} — ${r.kisi} ${r.saat}\n`; });
       if(navigator.share) navigator.share({text:m}).catch(()=>{});
@@ -1248,9 +1288,12 @@ function cizIsEmri(){
     if(ev.target.closest('#hepsiOnay')){
       if(!yonetici){ toast('Toplu onay için yönetici PIN gerekli'); return; }
       const kalan=[];
-      liste.forEach(x=>x.gorevler.forEach(k=>{ if(!done[x.t.id+':'+k]) kalan.push({x,k}); }));
+      liste.forEach(x=>x.gorevler.forEach(k=>{
+        const gk=k; // gorevler gercek kodlari tutuyor (D/D2/DV/T...)
+        if(!done[x.t.id+':'+gk]) kalan.push({x,k:gk});
+      }));
       if(!kalan.length){ toast('Zaten hepsi onaylı'); return; }
-      const tuzK=kalan.filter(o=>o.k==='T').reduce((n,o)=>n+(o.x.tuzKg||0),0);
+      const tuzK=kalan.filter(o=>DEVIR_KODLARI.includes(o.k)?false:o.k==='T').reduce((n,o)=>n+(o.x.tuzKg||0),0);
       const onay=await onayDialog('Tümünü Onayla',
         kalan.length+' görev onaylanacak'+(ieUrun!=='hepsi'?' ('+ieUrun+')':'')+'.'+(tuzK?'\nToplam '+tuzK+' kg tuz.':''),
         'Hepsini Onayla');
