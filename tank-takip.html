@@ -851,7 +851,7 @@ function csvIndir(ad, satirlar){
 }
 function cizOzet(){
   document.getElementById('hdr').innerHTML=`
-    <div class="top"><h1>Özet</h1><button class="icon" id="btnTankIndir">⬇ Tank Listesi</button><button class="icon" id="btnKilit">${yonetici?'🔓':'🔒'}</button></div>`;
+    <div class="top"><h1>Özet</h1>${yonetici?'<button class="icon" id="btnTankIndir">⬇ Tank Listesi</button>':''}<button class="icon" id="btnKilit">${yonetici?'🔓':'🔒'}</button></div>`;
   document.getElementById('btnKilit').onclick=yoneticiGirisi;
   const bugun=bugunISO();
   const bugunListe=isEmriUret(bugun);
