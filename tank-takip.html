@@ -81,6 +81,7 @@ main{padding:8px 16px 0}
 .pill.on-time{color:#15803D;border-color:rgba(21,128,61,.25);background:#DCFCE7}
 .pill.soon{color:#B45309;border-color:rgba(217,119,6,.25);background:#FEF3C7}
 .pill.ready{background:#15803D;color:#fff;border-color:transparent;font-weight:700}
+.pill.bugunPill{background:#D97706;color:#fff;border-color:transparent;font-weight:700}
 .pill.kapaliPill{background:#E0E7FF;color:#3730A3;border-color:#C7D2FE;font-weight:700}
 .pill.late{background:#DC2626;color:#fff;border-color:transparent;font-weight:700}
 .empty{border:1px dashed var(--line);border-radius:14px;padding:26px 20px;text-align:center;color:var(--muted)}
@@ -656,16 +657,15 @@ const seri=t=>(t.kod.match(/^[A-ZÇĞİÖŞÜ]/)||[''])[0];
 const urunler=()=>Object.keys(program);
 function durum(t){
   if(t.bosaltildi) return t.temizlendi? 'temiz' : 'dip';
-  if(t.kapatildi) return 'kapali';
+  if(t.kapatildi) return 'hazir';            // hava kesildi, isi bitti = HAZIR
   const g=gun(t),h=(+t.hedefGun)||30;
-  if(g>=h && t.hedefDusuk) return 'hazir';   // hedef sonradan düşürüldü → gecikme sayılmaz
-  if(g>h+3) return 'gecti';
-  if(g>=h) return 'hazir';
+  if(g>h) return 'gecti';                    // hedef gunu gecti ama hava hala acik
+  if(g===h) return 'bugunKapanacak';         // tam bugun, havayi kes
   if(g>=h-2) return 'yakin';
   return 'devam';
 }
-const ETIKET={devam:'Fermente',yakin:'Yaklaşıyor',hazir:'Hazır',gecti:'Süre geçti',kapali:'Kapatıldı · Bekliyor',dip:'Dip · Temizlenecek',temiz:'Temiz · Boş'};
-const SINIF={devam:'on-time',yakin:'soon',hazir:'ready',gecti:'late',kapali:'kapaliPill',dip:'dipPill',temiz:'temizPill'};
+const ETIKET={devam:'Fermente',yakin:'Yaklaşıyor',bugunKapanacak:'Bugün Kapanacak',hazir:'Hazır (Hava Kesildi)',gecti:'Süre geçti',dip:'Dip · Temizlenecek',temiz:'Temiz · Boş'};
+const SINIF={devam:'on-time',yakin:'soon',bugunKapanacak:'bugunPill',hazir:'ready',gecti:'late',dip:'dipPill',temiz:'temizPill'};
 function toast(m){const d=document.createElement('div');d.className='toast';d.textContent=m;
   document.body.appendChild(d);setTimeout(()=>d.remove(),1700);}
 
@@ -884,7 +884,7 @@ function kapanisBekleyenler(){
   return tanklar.filter(t=>{
     if(t.bosaltildi || t.kapatildi) return false;
     const g=gun(t), hg=t.hedefGun||30;
-    if(g<=hg) return false;                       // henuz hedefe gelmemis
+    if(g<=hg) return false;                       // henuz hedefe gelmemis (bugun dahil - yarindan itibaren uyarir)
     const kk=t.kapanisKontrol;
     if(kk && kk.tarih===bug) return false;        // bugun zaten karar verilmis
     return true;
@@ -951,6 +951,7 @@ function cizOzet(){
   const gecikenler=gecikenIsler(bugun,3);
   const aktif=tanklar.filter(t=>!t.bosaltildi);
   const hazirlar=aktif.filter(t=>durum(t)==='hazir');
+  const bugunKapanacaklar=aktif.filter(t=>durum(t)==='bugunKapanacak');
   const gecenler=aktif.filter(t=>durum(t)==='gecti');
   const kgToplam=toplamKg();
   const oz=urunOzeti();
@@ -1215,7 +1216,9 @@ function tankListesiCiz(){
     if(t.bosaltildi) return false;
     if(filtre==='hepsi') return true;
     if(filtre==='erken') return !!t.erkenBitiren;
-    if(filtre==='bugun') return gun(t)===((+t.hedefGun)||30) && !t.bosaltildi && !t.kapatildi;
+    if(filtre==='bugun') return durum(t)==='bugunKapanacak';
+    if(filtre==='hazir') return durum(t)==='hazir';
+    if(filtre==='gecti') return durum(t)==='gecti';
     return durum(t)===filtre;
   });
   const sira={gecti:0,hazir:1,yakin:2,devam:3,dip:4,temiz:5};
@@ -1224,7 +1227,7 @@ function tankListesiCiz(){
   document.getElementById('ekran').innerHTML = liste.length ? liste.map(t=>{
     const g=gun(t),d=durum(t);
     const yuzde=Math.max(6,Math.min(100,Math.round(g/ +t.hedefGun*100)));
-    const gcls=d==='gecti'?'g-late':(d==='yakin'||d==='hazir')?'g-warn':'';
+    const gcls=d==='gecti'?'g-late':(d==='yakin'||d==='bugunKapanacak')?'g-warn':(d==='hazir'?'g-ok':'');
     const son=(t.olcumler||[])[0];
     const phDeger=son&&son.ph?parseFloat(String(son.ph).replace(',','.')):null;
     const phKritik=phDeger!==null && phDeger>4.0;
@@ -2831,7 +2834,7 @@ function cizTankIsEmri(kod){
         ${(()=>{const sb=tankBakimGecmisi(t,1)[0];return sb?`<p class="hint" style="margin:7px 0 0">Son bakım: ${sb.gorev} · ${kisaTarih(sb.tarih)}${sb.kisi?' · '+sb.kisi:''}</p>`:'';})()}
       </div>
     </div>
-    <div class="gunBuyuk ${d==='hazir'?'gb-hazir':(d==='gecti'?'gb-gecti':'')}">
+    <div class="gunBuyuk ${d==='hazir'?'gb-ok':(d==='bugunKapanacak'?'gb-hazir':(d==='gecti'?'gb-gecti':''))}">
       <span class="gbSayi">${g}</span>
       <span class="gbYazi">. GÜN<small>hedef ${t.hedefGun} gün</small></span>
     </div>
