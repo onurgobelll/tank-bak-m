@@ -81,6 +81,7 @@ main{padding:8px 16px 0}
 .pill.on-time{color:#15803D;border-color:rgba(21,128,61,.25);background:#DCFCE7}
 .pill.soon{color:#B45309;border-color:rgba(217,119,6,.25);background:#FEF3C7}
 .pill.ready{background:#15803D;color:#fff;border-color:transparent;font-weight:700}
+.pill.kapaliPill{background:#E0E7FF;color:#3730A3;border-color:#C7D2FE;font-weight:700}
 .pill.late{background:#DC2626;color:#fff;border-color:transparent;font-weight:700}
 .empty{border:1px dashed var(--line);border-radius:14px;padding:26px 20px;text-align:center;color:var(--muted)}
 .empty b{display:block;font-family:var(--cond);font-size:19px;letter-spacing:.06em;color:var(--ink);text-transform:uppercase;margin-bottom:5px}
@@ -646,6 +647,7 @@ const seri=t=>(t.kod.match(/^[A-ZÇĞİÖŞÜ]/)||[''])[0];
 const urunler=()=>Object.keys(program);
 function durum(t){
   if(t.bosaltildi) return t.temizlendi? 'temiz' : 'dip';
+  if(t.kapatildi) return 'kapali';
   const g=gun(t),h=+t.hedefGun;
   if(g>=h && t.hedefDusuk) return 'hazir';   // hedef sonradan düşürüldü → gecikme sayılmaz
   if(g>h+3) return 'gecti';
@@ -653,8 +655,8 @@ function durum(t){
   if(g>=h-2) return 'yakin';
   return 'devam';
 }
-const ETIKET={devam:'Fermente',yakin:'Yaklaşıyor',hazir:'Hazır',gecti:'Süre geçti',dip:'Dip · Temizlenecek',temiz:'Temiz · Boş'};
-const SINIF={devam:'on-time',yakin:'soon',hazir:'ready',gecti:'late',dip:'dipPill',temiz:'temizPill'};
+const ETIKET={devam:'Fermente',yakin:'Yaklaşıyor',hazir:'Hazır',gecti:'Süre geçti',kapali:'Kapatıldı · Bekliyor',dip:'Dip · Temizlenecek',temiz:'Temiz · Boş'};
+const SINIF={devam:'on-time',yakin:'soon',hazir:'ready',gecti:'late',kapali:'kapaliPill',dip:'dipPill',temiz:'temizPill'};
 function toast(m){const d=document.createElement('div');d.className='toast';d.textContent=m;
   document.body.appendChild(d);setTimeout(()=>d.remove(),1700);}
 
@@ -752,6 +754,7 @@ function isEmriUret(tarih){
   const out=[];
   tanklar.forEach(t=>{
     if(t.bosaltildi) return;
+    if(t.kapatildi) return;          // fermantasyon kapandi, gunluk is yok
     const g=gunTarihte(t,tarih);
     if(g<1) return;
     const up=program[t.urun];
@@ -870,7 +873,7 @@ function csvIndir(ad, satirlar){
 function kapanisBekleyenler(){
   const bug=bugunISO();
   return tanklar.filter(t=>{
-    if(t.bosaltildi) return false;
+    if(t.bosaltildi || t.kapatildi) return false;
     const g=gun(t), hg=t.hedefGun||30;
     if(g<=hg) return false;                       // henuz hedefe gelmemis
     const kk=t.kapanisKontrol;
@@ -884,9 +887,9 @@ async function kapanisKarar(id, karar){
   const sa=new Date().toTimeString().slice(0,5);
   if(karar==='kapandi'){
     const ok=await onayDialog(t.kod+' kapatıldı mı?',
-      t.urun+' · '+gun(t)+'. gün (hedef '+(t.hedefGun||30)+')\n\nTank boşaltılmış olarak işaretlenecek.','Kapatıldı');
+      t.urun+' · '+gun(t)+'. gün (hedef '+(t.hedefGun||30)+')\n\nFermantasyon bitti olarak işaretlenecek.\nTank dolu kalır, günlük görev üretmez.\nBoşaltma ayrı bir işlem.','Kapatıldı');
     if(!ok) return;
-    t.bosaltildi=bugunISO(); t.bosaltan=ad; t.bosaltmaSaat=sa;
+    t.kapatildi=bugunISO(); t.kapatan=ad; t.kapatmaSaat=sa;
     t.kapanisKontrol={tarih:bugunISO(), karar:'kapandi', kisi:ad, saat:sa};
   }else{
     const ek=await girdiDialog(t.kod+' devam ediyor',
@@ -899,6 +902,30 @@ async function kapanisKarar(id, karar){
   await sSet(K_TANK,tanklar);
   ciz();
   toast(t.kod+' · '+(karar==='kapandi'?'kapatıldı':'devam ediyor'));
+}
+/* Kapanis paneli yuzunden YANLISLIKLA bosaltilmis tanklar */
+function yanlisBosaltilanlar(){
+  return tanklar.filter(t=>t.bosaltildi && t.kapanisKontrol &&
+    t.kapanisKontrol.karar==='kapandi' && t.kapanisKontrol.tarih===t.bosaltildi);
+}
+async function yanlisBosaltmaGeriAl(){
+  const liste=yanlisBosaltilanlar();
+  if(!liste.length){ toast('Geri alınacak kayıt yok'); return; }
+  const ok=await onayDialog('Boşaltmaları Geri Al',
+    liste.length+' tank yanlışlıkla boşaltılmış görünüyor:\n'+
+    liste.slice(0,15).map(t=>'• '+t.kod+' ('+(t.urun||'')+')').join('\n')+
+    (liste.length>15?'\n… ve '+(liste.length-15)+' tank daha':'')+
+    '\n\nBunlar tekrar DOLU hale gelecek ve "Kapatıldı" olarak işaretlenecek.','Geri Al');
+  if(!ok) return;
+  liste.forEach(t=>{
+    const kk=t.kapanisKontrol;
+    delete t.bosaltildi; delete t.bosaltan; delete t.bosaltmaSaat;
+    delete t.temizlendi; delete t.temizleyen; delete t.temizlikSaat;
+    t.kapatildi=kk.tarih; t.kapatan=kk.kisi; t.kapatmaSaat=kk.saat;
+  });
+  await sSet(K_TANK,tanklar);
+  ciz();
+  toast(liste.length+' tank geri alındı · kapatıldı olarak işaretlendi');
 }
 function cizOzet(){
   document.getElementById('hdr').innerHTML=`
@@ -938,7 +965,17 @@ function cizOzet(){
   const ozMax=Math.max(1,...oz.map(([u,v])=>v.kg));
   const e=document.getElementById('ekran');
   const kapBekleyen=kapanisBekleyenler();
+  const yanlisBos=yanlisBosaltilanlar();
   e.innerHTML=`
+    ${(yanlisBos.length&&yonetici)?`
+    <div class="kapanisPanel" style="background:#FEF2F2;border-color:#FCA5A5">
+      <div class="kapanisBas">
+        <span class="kapanisIkon">↩</span>
+        <div><b style="color:#991B1B">${yanlisBos.length} tank yanlış boşaltıldı</b>
+        <span style="color:#B91C1C">"Kapatıldı" düğmesi eskiden tankı boşaltıyordu — düzeltildi</span></div>
+      </div>
+      <button class="btn" id="yanlisGeri" style="background:#DC2626">Boşaltmaları Geri Al</button>
+    </div>`:''}
     ${kapBekleyen.length?`
     <div class="kapanisPanel">
       <div class="kapanisBas">
@@ -1077,16 +1114,17 @@ function cizOzet(){
     const bti=document.getElementById('btnTankIndir'); if(bti) bti.onclick=tankListesiIndir;
   e.querySelectorAll('[data-kapandi]').forEach(b=>b.onclick=()=>kapanisKarar(b.dataset.kapandi,'kapandi'));
   e.querySelectorAll('[data-devam]').forEach(b=>b.onclick=()=>kapanisKarar(b.dataset.devam,'devam'));
+  const yg=document.getElementById('yanlisGeri'); if(yg) yg.onclick=yanlisBosaltmaGeriAl;
   const kt=document.getElementById('kapTumu');
   if(kt) kt.onclick=async()=>{
     const liste=kapanisBekleyenler();
     const ok=await onayDialog('Tümünü Kapatıldı İşaretle',
-      liste.length+' tank boşaltılmış olarak işaretlenecek:\n'+
+      liste.length+' tank KAPATILDI olarak işaretlenecek (boşaltılmaz, dolu kalır):\n'+
       liste.slice(0,12).map(t=>'• '+t.kod+' ('+t.urun+', '+gun(t)+'. gün)').join('\n')+
       (liste.length>12?'\n… ve '+(liste.length-12)+' tank daha':''),'Hepsini Kapat');
     if(!ok) return;
     const ad=kullaniciAdi()||'Yönetici', sa=new Date().toTimeString().slice(0,5), bug=bugunISO();
-    liste.forEach(t=>{ t.bosaltildi=bug; t.bosaltan=ad; t.bosaltmaSaat=sa;
+    liste.forEach(t=>{ t.kapatildi=bug; t.kapatan=ad; t.kapatmaSaat=sa;
       t.kapanisKontrol={tarih:bug,karar:'kapandi',kisi:ad,saat:sa}; });
     await sSet(K_TANK,tanklar); ciz(); toast(liste.length+' tank kapatıldı');
   };
@@ -1979,6 +2017,10 @@ function detay(id){
       :`${!t.erkenBitiren&&durum(t)!=='hazir'&&durum(t)!=='gecti'?`<button class="btn ghost" id="erkenBitir">Erken Hazır İşaretle</button>`:''}
         ${t.erkenBitiren?`<button class="btn ghost" id="erkenGeriAl">⬇ Erken Hazır'ı Geri Al</button>
           <p class="hint">Erken hazır: ${t.erkenBitiren} · ${kisaTarih(t.erkenTarih||t.baslangic)}${t.hedefGunAsil?` · asıl hedef ${t.hedefGunAsil} gün`:''}</p>`:''}
+        ${t.kapatildi
+          ?`<button class="btn ghost" id="kapatGeri">↩ Kapatmayı Geri Al</button>
+            <p class="hint">Kapatıldı: ${kisaTarih(t.kapatildi)}${t.kapatan?` · ${t.kapatan}${t.kapatmaSaat?' · '+t.kapatmaSaat:''}`:''} — tank dolu, günlük görev üretmiyor</p>`
+          :`<button class="btn ghost" id="kapatBtn">🔒 Fermantasyonu Kapat</button>`}
         <button class="btn" id="bosalt">Tankı boşalt</button>`}
     <button class="btn danger" id="sil">Tankı sil</button>`:''}
   `);
@@ -2015,6 +2057,17 @@ function detay(id){
       await sSet(K_TANK,tanklar); detay(id); toast(t.kod+' yeniden aktif');
     };
     q('#bosalt').onclick=async()=>{t.bosaltildi=bugunISO();await sSet(K_TANK,tanklar);kapat();ciz();toast(t.kod+' boşaltıldı');};
+    const kpt=q('#kapatBtn');
+    if(kpt) kpt.onclick=async()=>{
+      const ad=kullaniciAdi()||'Yönetici';
+      t.kapatildi=bugunISO(); t.kapatan=ad; t.kapatmaSaat=new Date().toTimeString().slice(0,5);
+      await sSet(K_TANK,tanklar); kapat(); ciz(); toast(t.kod+' kapatıldı (dolu kalır)');
+    };
+    const kga=q('#kapatGeri');
+    if(kga) kga.onclick=async()=>{
+      delete t.kapatildi; delete t.kapatan; delete t.kapatmaSaat; delete t.kapanisKontrol;
+      await sSet(K_TANK,tanklar); kapat(); ciz(); toast(t.kod+' tekrar açıldı');
+    };
   }else{
     q('#geriac').onclick=async()=>{t.bosaltildi='';await sSet(K_TANK,tanklar);detay(id);};
   }
