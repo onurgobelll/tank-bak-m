@@ -338,6 +338,11 @@ textarea{min-height:110px;resize:vertical;font-family:ui-monospace,monospace;fon
 .kgrozet{display:inline-block;margin-left:8px;background:linear-gradient(135deg,var(--mavi),var(--mavi2));color:#fff;
   font-family:var(--cond);font-size:15px;font-weight:700;padding:3px 10px 2px;border-radius:999px;vertical-align:middle}
 #qrYazdirAlani{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-top:14px}
+#qrYazdirAlani.yz2{grid-template-columns:repeat(2,1fr)}
+#qrYazdirAlani.yz3{grid-template-columns:repeat(3,1fr)}
+#qrYazdirAlani.yz32{grid-template-columns:repeat(4,1fr)}
+#qrYazdirAlani.yz4{grid-template-columns:repeat(5,1fr)}
+#qrYazdirAlani.yz32 .qrEtiket,#qrYazdirAlani.yz4 .qrEtiket{font-size:13px}
 .seg small{display:block;font-size:11px;opacity:.75;letter-spacing:0;text-transform:none;margin-top:2px}
 .qrKart{border:1px solid var(--line);border-radius:12px;padding:10px;text-align:center;background:#fff}
 .qrKutu{display:flex;justify-content:center;margin-bottom:6px}
@@ -639,7 +644,11 @@ function varsayilanProgram(){
 /* ================= durum ================= */
 let tanklar=[], program={}, isemri={}, gorunum='isemri', filtre='hepsi', arama='', ieTarih=null, progUrun=null, qrGoruntuKod=null;
 const bugunISO=()=>new Date().toISOString().slice(0,10);
-const gunFark=(a,b)=>Math.round((new Date(b+'T00:00')-new Date(a+'T00:00'))/86400000);
+const gunFark=(a,b)=>{
+  const da=new Date(a+'T00:00'), db=new Date(b+'T00:00');
+  if(isNaN(da)||isNaN(db)) return 0;
+  return Math.round((db-da)/86400000);
+};
 const kisaTarih=t=>{const d=new Date(t+'T00:00');return d.getDate()+'.'+(d.getMonth()+1)};
 const gunTarihte=(t,tar)=>gunFark(t.baslangic,tar)+1;
 const gun=t=>gunTarihte(t,t.bosaltildi||bugunISO());
@@ -648,7 +657,7 @@ const urunler=()=>Object.keys(program);
 function durum(t){
   if(t.bosaltildi) return t.temizlendi? 'temiz' : 'dip';
   if(t.kapatildi) return 'kapali';
-  const g=gun(t),h=+t.hedefGun;
+  const g=gun(t),h=(+t.hedefGun)||30;
   if(g>=h && t.hedefDusuk) return 'hazir';   // hedef sonradan düşürüldü → gecikme sayılmaz
   if(g>h+3) return 'gecti';
   if(g>=h) return 'hazir';
@@ -1206,7 +1215,7 @@ function tankListesiCiz(){
     if(t.bosaltildi) return false;
     if(filtre==='hepsi') return true;
     if(filtre==='erken') return !!t.erkenBitiren;
-    if(filtre==='bugun') return gun(t)===+t.hedefGun;
+    if(filtre==='bugun') return gun(t)===((+t.hedefGun)||30) && !t.bosaltildi && !t.kapatildi;
     return durum(t)===filtre;
   });
   const sira={gecti:0,hazir:1,yakin:2,devam:3,dip:4,temiz:5};
@@ -2610,10 +2619,20 @@ async function qrOku(){
 
 function qrOlustur(){
   const aktifTanklar=tanklar.filter(t=>!t.bosaltildi).sort((a,b)=>a.kod.localeCompare(b.kod,'tr',{numeric:true}));
+  const basilmamis=aktifTanklar.filter(t=>!t.qrBasildi);
   const p=panel(`
     <div class="pbar"><h2>QR Kodları</h2><button class="icon" data-kapat>Kapat</button></div>
     <p class="hint">Tank başına bir QR üretilir. Yapıştırdıktan sonra QR'ı okutan kişi doğrudan o tankın bugünkü işini görür ve onaylar.</p>
-    <div class="seg"><button id="qm1" aria-pressed="true">Aralık seç</button><button id="qm2" aria-pressed="false">Tüm aktif tanklar (${aktifTanklar.length})</button></div>
+    <div class="seg" style="flex-wrap:wrap">
+      <button id="qm0" aria-pressed="true">🆕 Basılmamışlar (${basilmamis.length})</button>
+      <button id="qm1" aria-pressed="false">Aralık seç</button>
+      <button id="qm2" aria-pressed="false">Tümü (${aktifTanklar.length})</button>
+    </div>
+    <div id="qYeni">
+      ${basilmamis.length
+        ? `<p class="hint">Bu tanklara henüz QR basılmadı:<br><b>${basilmamis.slice(0,40).map(t=>t.kod).join(', ')}${basilmamis.length>40?' … +'+(basilmamis.length-40):''}</b></p>`
+        : `<p class="hint">Tüm aktif tankların QR'ı basılmış görünüyor. Yeni tank eklendiğinde burada listelenir.</p>`}
+    </div>
     <div id="qAralik">
       <div class="two">
         <div><label>Seri</label><input id="q_seri" placeholder="A" autocapitalize="characters"></div>
@@ -2624,27 +2643,42 @@ function qrOlustur(){
     <label>Etiket boyutu</label>
     <div class="seg">
       <button id="qb2" aria-pressed="false">Büyük<br><small>8/sayfa</small></button>
-      <button id="qb3" aria-pressed="true">Orta<br><small>15/sayfa</small></button>
-      <button id="qb4" aria-pressed="false">Küçük<br><small>28/sayfa</small></button>
+      <button id="qb3" aria-pressed="false">Orta<br><small>15/sayfa</small></button>
+      <button id="qb32" aria-pressed="true">A4 Tam<br><small>32/sayfa</small></button>
+      <button id="qb4" aria-pressed="false">Küçük<br><small>40/sayfa</small></button>
     </div>
     <button class="btn" id="q_uret">QR'ları Oluştur</button>
     <div id="qSonuc"></div>
   `);
   const q=s=>p.querySelector(s);
-  let mod='aralik', yzBoy='yz3';
-  ['2','3','4'].forEach(n=>{
+  let mod='yeni', yzBoy='yz32';
+  const modAyar=(m)=>{
+    mod=m;
+    q('#qm0').setAttribute('aria-pressed', m==='yeni');
+    q('#qm1').setAttribute('aria-pressed', m==='aralik');
+    q('#qm2').setAttribute('aria-pressed', m==='tumu');
+    q('#qYeni').style.display   = m==='yeni'   ? '' : 'none';
+    q('#qAralik').style.display = m==='aralik' ? '' : 'none';
+  };
+  ['2','3','32','4'].forEach(n=>{
     q('#qb'+n).onclick=()=>{
       yzBoy='yz'+n;
-      ['2','3','4'].forEach(m=>q('#qb'+m).setAttribute('aria-pressed', m===n));
+      ['2','3','32','4'].forEach(m=>q('#qb'+m).setAttribute('aria-pressed', m===n));
       const alan=q('#qrYazdirAlani');
       if(alan) alan.className=yzBoy;
     };
   });
-  q('#qm1').onclick=()=>{mod='aralik';q('#qm1').setAttribute('aria-pressed','true');q('#qm2').setAttribute('aria-pressed','false');q('#qAralik').style.display='';};
-  q('#qm2').onclick=()=>{mod='tumu';q('#qm2').setAttribute('aria-pressed','true');q('#qm1').setAttribute('aria-pressed','false');q('#qAralik').style.display='none';};
+  q('#qm0').onclick=()=>modAyar('yeni');
+  q('#qm1').onclick=()=>modAyar('aralik');
+  q('#qm2').onclick=()=>modAyar('tumu');
+  modAyar('yeni');
   q('#q_uret').onclick=()=>{
     let liste;
-    if(mod==='tumu'){ liste=aktifTanklar; }
+    if(mod==='yeni'){
+      liste=aktifTanklar.filter(t=>!t.qrBasildi);
+      if(!liste.length){ toast('Basılmamış tank yok'); return; }
+    }
+    else if(mod==='tumu'){ liste=aktifTanklar; }
     else{
       const sr=q('#q_seri').value.trim().toUpperCase();
       const b=+q('#q_bas').value, s=+q('#q_son').value;
@@ -2666,14 +2700,31 @@ function qrOlustur(){
         new QRCode(el,{text:tabanURL()+'?tank='+encodeURIComponent(t.kod), width:110, height:110});
       }
     });
-    q('#q_yazdir').onclick=()=>qrYazdir(liste, yzBoy);
+    q('#q_yazdir').onclick=async()=>{
+      qrYazdir(liste, yzBoy);
+      // gercek tank kayitlarini "basildi" isaretle
+      const bug=bugunISO(); let n=0;
+      liste.forEach(x=>{
+        const t=tanklar.find(tk=>tk.kod===x.kod);
+        if(t && !t.qrBasildi){ t.qrBasildi=bug; n++; }
+      });
+      if(n){ await sSet(K_TANK,tanklar); }
+    };
+    if(mod!=='aralik'){
+      q('#qSonuc').insertAdjacentHTML('beforeend',
+        '<button class="btn ghost" id="q_sifirla">Bu listeyi "basılmadı" yap</button>');
+      q('#q_sifirla').onclick=async()=>{
+        liste.forEach(x=>{ const t=tanklar.find(tk=>tk.kod===x.kod); if(t) delete t.qrBasildi; });
+        await sSet(K_TANK,tanklar); toast('Basılmadı olarak işaretlendi'); kapat(); qrOlustur();
+      };
+    }
   };
 }
 function qrYazdir(liste, yzBoy){
   toast('Yazdırma hazırlanıyor…');
-  const sutun = yzBoy==='yz2'?2 : yzBoy==='yz4'?4 : 3;
-  const qrMM = yzBoy==='yz2'?42 : yzBoy==='yz4'?21 : 29;
-  const etkPt = yzBoy==='yz2'?20 : yzBoy==='yz4'?11 : 14;
+  const sutun = yzBoy==='yz2'?2 : yzBoy==='yz32'?4 : yzBoy==='yz4'?5 : 3;
+  const qrMM  = yzBoy==='yz2'?42 : yzBoy==='yz32'?26 : yzBoy==='yz4'?22 : 29;
+  const etkPt = yzBoy==='yz2'?20 : yzBoy==='yz32'?13 : yzBoy==='yz4'?10 : 14;
   // Her QR'ı gizli bir kutuda üretip dataURL'e çevir
   const gecici=document.createElement('div');
   gecici.style.cssText='position:absolute;left:-9999px;top:0';
