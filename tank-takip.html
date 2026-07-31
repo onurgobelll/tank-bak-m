@@ -370,6 +370,7 @@ textarea{min-height:110px;resize:vertical;font-family:ui-monospace,monospace;fon
    Boş bırakılırsa uygulama sadece bu telefonda çalışır (eski davranış). */
 const FIREBASE_URL = 'https://tank-takip-default-rtdb.firebaseio.com';
 const K_HEDEF='tanktakip:urunHedef';
+const K_URUNES='tanktakip:urunEslesme';
 let urunHedef={};
 const K_PERSONEL='tanktakip:personel', K_AD_KILIT='tanktakip:cihazKilit';
 const K_TANK='tanktakip:tanklar', K_PROG='tanktakip:programv2', K_IS='tanktakip:isemri', K_VERI='tanktakip:veriYuklendi', K_DEV='tanktakip:devirdaimSure';
@@ -649,6 +650,13 @@ function varsayilanProgram(){
 }
 
 /* ================= durum ================= */
+let urunEslesme={};   /* {'Kavanozluk No.2':'Salatalık No.2'} — görünen ad ayrı, program aynı */
+/* bir ürünün programını hangi üründen alacağını çöz */
+function programUrun(u){
+  if(!u) return u;
+  const hedef=urunEslesme[u];
+  return (hedef && hedef!==u) ? hedef : u;
+}
 let tanklar=[], program={}, isemri={}, gorunum='isemri', filtre='hepsi', arama='', ieTarih=null, progUrun=null, qrGoruntuKod=null;
 const bugunISO=()=>new Date().toISOString().slice(0,10);
 const gunFark=(a,b)=>{
