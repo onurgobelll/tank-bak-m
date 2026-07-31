@@ -2626,6 +2626,11 @@ function qrOlustur(){
   const p=panel(`
     <div class="pbar"><h2>QR Kodları</h2><button class="icon" data-kapat>Kapat</button></div>
     <p class="hint">Tank başına bir QR üretilir. Yapıştırdıktan sonra QR'ı okutan kişi doğrudan o tankın bugünkü işini görür ve onaylar.</p>
+    <details style="margin-bottom:10px">
+      <summary style="cursor:pointer;color:var(--muted);font-size:12.5px">Elle "basıldı" işaretle (kod yapıştır)</summary>
+      <textarea id="qYapistir" rows="3" placeholder="A-002 A-003 A-004 ... (boşluk veya alt satırla ayır)" style="margin-top:8px"></textarea>
+      <button class="btn ghost" id="qYapistirUygula" style="margin-top:6px">Bu kodları "basıldı" işaretle</button>
+    </details>
     <div class="seg" style="flex-wrap:wrap">
       <button id="qm0" aria-pressed="true">🆕 Basılmamışlar (${basilmamis.length})</button>
       <button id="qm1" aria-pressed="false">Aralık seç</button>
@@ -2671,6 +2676,19 @@ function qrOlustur(){
       if(alan) alan.className=yzBoy;
     };
   });
+  q('#qYapistirUygula').onclick=async()=>{
+    const ham=q('#qYapistir').value.trim();
+    if(!ham){ toast('Kod listesi boş'); return; }
+    const kodlar=[...new Set(ham.split(/[\s,;]+/).map(s=>s.trim().toUpperCase()).filter(Boolean))];
+    const bug=bugunISO(); let bulundu=0, yok=[];
+    kodlar.forEach(k=>{
+      const t=tanklar.find(tk=>tk.kod===k);
+      if(t){ t.qrBasildi=bug; bulundu++; } else yok.push(k);
+    });
+    await sSet(K_TANK,tanklar);
+    toast(bulundu+' tank işaretlendi'+(yok.length?', '+yok.length+' bulunamadı':''));
+    kapat(); qrOlustur();
+  };
   q('#qm0').onclick=()=>modAyar('yeni');
   q('#qm1').onclick=()=>modAyar('aralik');
   q('#qm2').onclick=()=>modAyar('tumu');
