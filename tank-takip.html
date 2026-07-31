@@ -2209,6 +2209,11 @@ function hedefGunHesapla(urun, seriHarfi){
   const gunler=Object.keys(up).map(Number);
   return gunler.length? Math.max(...gunler)+3 : 30;
 }
+/* Tank kodunu karsilastirilabilir hale getir: A-9 / A9 / a-009 -> A-9 */
+function kodNormal(k){
+  const m=String(k||'').toUpperCase().replace(/\s+/g,'').match(/^([A-ZÇĞİÖŞÜ]{1,3})-?0*(\d{1,4})$/);
+  return m ? m[1]+'-'+parseInt(m[2],10) : String(k||'').toUpperCase().replace(/\s+/g,'');
+}
 function kodBul(s){
   let m=s.match(/^([^\s]+)\s+nolu\s+tank/i);
   if(m) return m[1].toUpperCase();
@@ -2743,14 +2748,19 @@ function qrOlustur(){
   q('#qYapistirUygula').onclick=async()=>{
     const ham=q('#qYapistir').value.trim();
     if(!ham){ toast('Kod listesi boş'); return; }
-    const kodlar=[...new Set(ham.split(/[\s,;]+/).map(s=>s.trim().toUpperCase()).filter(Boolean))];
-    const bug=bugunISO(); let bulundu=0, yok=[];
+    const kodlar=[...new Set(ham.split(/[\s,;\n\r\t]+/).map(s=>s.trim()).filter(Boolean))];
+    const bug=bugunISO(); let bulundu=0; const yok=[];
+    const harita=new Map();
+    tanklar.forEach(t=>{ if(t.kod) harita.set(kodNormal(t.kod), t); });
     kodlar.forEach(k=>{
-      const t=tanklar.find(tk=>tk.kod===k);
+      const t=harita.get(kodNormal(k));
       if(t){ t.qrBasildi=bug; bulundu++; } else yok.push(k);
     });
     await sSet(K_TANK,tanklar);
-    toast(bulundu+' tank işaretlendi'+(yok.length?', '+yok.length+' bulunamadı':''));
+    if(yok.length){
+      await onayDialog('Sonuç',
+        bulundu+' tank işaretlendi.\n\nBulunamayan '+yok.length+' kod:\n'+yok.join(', '),'Tamam');
+    } else toast(bulundu+' tank işaretlendi');
     kapat(); qrOlustur();
   };
   q('#qm0').onclick=()=>modAyar('yeni');
@@ -2758,7 +2768,7 @@ function qrOlustur(){
   q('#qm3').onclick=()=>modAyar('liste');
   q('#qm2').onclick=()=>modAyar('tumu');
   modAyar('yeni');
-  q('#q_uret').onclick=()=>{
+  q('#q_uret').onclick=async()=>{
     let liste;
     if(mod==='yeni'){
       liste=aktifTanklar.filter(t=>!t.qrBasildi);
@@ -2767,14 +2777,14 @@ function qrOlustur(){
     else if(mod==='liste'){
       const ham=q('#qListeMetin').value.trim();
       if(!ham){ toast('Kod listesi boş'); return; }
-      const istenen=[...new Set(ham.split(/[\s,;]+/).map(s=>s.trim().toUpperCase()).filter(Boolean))];
+      const istenen=[...new Set(ham.split(/[\s,;\n\r\t]+/).map(s=>s.trim()).filter(Boolean))];
+      const harita=new Map();
+      aktifTanklar.forEach(t=>{ if(t.kod) harita.set(kodNormal(t.kod), t); });
       const bulunan=[], yok=[];
-      istenen.forEach(k=>{
-        const t=aktifTanklar.find(x=>x.kod===k) || aktifTanklar.find(x=>kodBul(x.kod)===kodBul(k));
-        if(t) bulunan.push(t); else yok.push(k);
-      });
-      if(!bulunan.length){ toast('Hiçbir kod eşleşmedi'); return; }
-      if(yok.length) toast(yok.length+' kod bulunamadı: '+yok.slice(0,4).join(', '));
+      istenen.forEach(k=>{ const t=harita.get(kodNormal(k)); if(t) bulunan.push(t); else yok.push(k); });
+      if(!bulunan.length){ await onayDialog('Eşleşme Yok','Yazdığın kodların hiçbiri bulunamadı:\n'+istenen.join(', '),'Tamam'); return; }
+      if(yok.length) await onayDialog('Bazı Kodlar Bulunamadı',
+        bulunan.length+' tank bulundu.\n\nBulunamayan '+yok.length+' kod:\n'+yok.join(', ')+'\n\nBulunanlarla devam edilecek.','Devam');
       liste=bulunan;
     }
     else if(mod==='tumu'){ liste=aktifTanklar; }
