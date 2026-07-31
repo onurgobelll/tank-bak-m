@@ -442,6 +442,11 @@ async function progKaydet(){
   try{ localStorage.setItem(K_PROG, JSON.stringify(program)); }catch(e){}
   return ok;
 }
+async function eslesmeKaydet(){
+  const ok=await fbSet(K_URUNES, nesneKodla(urunEslesme));
+  try{ localStorage.setItem(K_URUNES, JSON.stringify(urunEslesme)); }catch(e){}
+  return ok;
+}
 async function hedefKaydet(){
   const ok=await fbSet(K_HEDEF, nesneKodla(urunHedef));
   try{ localStorage.setItem(K_HEDEF, JSON.stringify(urunHedef)); }catch(e){}
@@ -532,6 +537,7 @@ async function simdiSenkronEt(){
   if(dv!==undefined) devirdaimSure=dv;
   if(pe!==undefined) personel=pe;
   if(uh!==undefined) urunHedef=nesneCoz(uh);
+  const ue=await fbGet(K_URUNES); if(ue!==undefined) urunEslesme=nesneCoz(ue)||{};
   ciz();
   toast('Bulut ile eşitlendi');
 }
@@ -766,7 +772,7 @@ function isEmriUret(tarih){
     if(t.kapatildi) return;          // fermantasyon kapandi, gunluk is yok
     const g=gunTarihte(t,tarih);
     if(g<1) return;
-    const up=program[t.urun];
+    const up=program[programUrun(t.urun)];
     const p=up&&up[g];
     if(!p||!p.g||!p.g.length) return;
     const s=seri(t);
@@ -1606,15 +1612,36 @@ function cizProgram(){
       program=varsayilanProgram(); await progKaydet(); cizProgram(); toast('Sıfırlandı');
     };
     document.getElementById('pYeni').onclick=async()=>{
-      const ad=(prompt('Yeni ürün adı (örn: Biber Salçalık):')||'').trim();
+      const ad=(prompt('Yeni ürün adı (örn: Kavanozluk No.2):')||'').trim();
       if(!ad) return;
-      if(program[ad]){ progUrun=ad; cizProgram(); toast('Bu ürün zaten var'); return; }
-      program[ad]={}; progUrun=ad;
-      await progKaydet(); cizProgram(); toast(ad+' eklendi — şimdi gün ekle');
+      if(program[ad]||urunEslesme[ad]){ progUrun=ad; cizProgram(); toast('Bu ürün zaten var'); return; }
+      const kaynaklar=Object.keys(program);
+      const sec=await secimDialog(ad+' — Program',
+        'Bu ürünün bakım programı nasıl olsun?',
+        [{etiket:'Kendi programını yazacağım', tur:'ana'},
+         ...kaynaklar.slice(0,6).map(k=>({etiket:'Aynen "'+k+'" gibi'}))]);
+      if(sec===-1) return;
+      if(sec===0){
+        program[ad]={}; progUrun=ad;
+        await progKaydet(); cizProgram(); toast(ad+' eklendi — şimdi gün ekle');
+      }else{
+        const kaynak=kaynaklar[sec-1];
+        urunEslesme[ad]=kaynak;
+        await eslesmeKaydet(); progUrun=kaynak; cizProgram();
+        toast(ad+' → '+kaynak+' programına bağlandı');
+      }
     };
   }
   document.getElementById('btnKilit').onclick=yoneticiGirisi;
   const bs=document.getElementById('btnSenk'); if(bs) bs.onclick=simdiSenkronEt;
+  document.querySelectorAll('[data-esKaldir]').forEach(b=>b.onclick=async()=>{
+    const u=b.dataset.eskaldir||b.getAttribute('data-esKaldir');
+    const ok=await onayDialog('Bağlantıyı Kaldır',
+      u+' artık kendi programını kullanacak (boş başlar).','Kaldır');
+    if(!ok) return;
+    delete urunEslesme[u]; program[u]=program[u]||{};
+    await eslesmeKaydet(); await progKaydet(); cizProgram();
+  });
   const bg2=document.getElementById('bulutGonder');
   if(bg2) bg2.onclick=async()=>{
     const gunSay=Object.values(program).reduce((n,u)=>n+Object.keys(u).length,0);
@@ -1627,6 +1654,7 @@ function cizProgram(){
     if(basarili){
       await fbSet(K_DEV,devirdaimSure);
       await hedefKaydet();
+      await eslesmeKaydet();
       await onayDialog('Gönderildi','Program buluta yazıldı.\n\nDiğer cihazlarda uygulamayı kapatıp açın, sonra Program sekmesinde 🔄 düğmesine dokunun.','Tamam');
     }
     cizProgram();
@@ -1689,6 +1717,11 @@ function cizProgram(){
     <input type="file" id="sabDosya" accept=".csv,text/csv" style="display:none">
     <p class="hint">İndir → Excel'de düzenle → Yükle. Satır ekleyip silebilirsin; yükleme mevcut programın yerine geçer.</p>
   </div>`:''}
+  ${Object.keys(urunEslesme).length?`<div class="sec">Bağlı Ürünler</div>
+  <p class="hint">Bu ürünlerin kendi programı yok, başka ürünün programını kullanıyor:</p>
+  ${Object.entries(urunEslesme).map(([u,k])=>`
+    <div class="log"><span class="d">↳</span><span class="v"><b>${u}</b> → ${k}
+      ${yonetici?`<button class="icon" data-esKaldir="${u}" style="margin-left:8px;padding:4px 9px;font-size:11px">Kaldır</button>`:''}</span></div>`).join('')}`:''}
   <div class="sec">Bulut Bağlantısı</div>
   <div class="grafKutu">
     <p class="hint" style="margin:0">${!FIREBASE_URL?'<b style="color:var(--alarm)">Adres tanımlı değil</b> — veriler sadece bu telefonda.'
@@ -1968,7 +2001,7 @@ function tankBakimGecmisi(t, adet){
 function detay(id){
   const t=tanklar.find(x=>x.id===id); if(!t) return;
   const g=gun(t), d=durum(t), kalan=+t.hedefGun-g;
-  const up=program[t.urun]||{};
+  const up=program[programUrun(t.urun)]||{};
   const bugunProg=up[g];
   const p=panel(`
     <div class="pbar"><h2>${t.kod} <span class="kap">${t.kapasite||''}</span></h2><button class="icon" data-kapat>Kapat</button></div>
@@ -2138,13 +2171,15 @@ function trKucuk(s){
   return String(s||'').replace(/İ/g,'i').replace(/I/g,'ı').toLowerCase();
 }
 const URUN_DESENLERI=[
+  /* kavanozluk + no.2 → ayrı isim, No.2 programına bağlı */
+  {re:/kavanozluk[^0-9]{0,12}no\s*[.:]?\s*2\b|no\s*[.:]?\s*2[^a-zçğıöşü]{0,12}kavanozluk/i, urun:'Kavanozluk No.2'},
   {re:/salatal[ıi]k[^0-9]{0,12}no\s*[.:]?\s*1\b|no\s*[.:]?\s*1[^a-zçğıöşü]{0,3}salatal[ıi]k/i, urun:'Salatalık No.1'},
   {re:/salatal[ıi]k[^0-9]{0,12}no\s*[.:]?\s*2\b|no\s*[.:]?\s*2[^a-zçğıöşü]{0,3}salatal[ıi]k/i, urun:'Salatalık No.2'},
   {re:/salatal[ıi]k[^0-9]{0,12}no\s*[.:]?\s*3\b|no\s*[.:]?\s*3[^a-zçğıöşü]{0,3}salatal[ıi]k/i, urun:'Salatalık No.3'},
   {re:/salatal[ıi]k/i, urun:'Salatalık No.1'},
   {re:/domates/i, urun:'Domates'},
   {re:/lahana/i, urun:'Lahana'},
-  {re:/kelek|kavanozluk/i, urun:'Kelek'},
+  {re:/kelek/i, urun:'Kelek'},
   {re:/havu[cç]/i, urun:'Havuç'},
   {re:/[şs]eftal/i, urun:'Şeftali Çağlası'},
   {re:/acur/i, urun:'Acur'},
@@ -2152,7 +2187,7 @@ const URUN_DESENLERI=[
   {re:/erik/i, urun:'Erik Turşusu'}
 ];
 function hedefAyar(urun){
-  const v=urunHedef[urun];
+  const v=urunHedef[programUrun(urun)];
   if(v===undefined||v===null) return {};
   if(typeof v==='object') return v;
   return {genel:+v};                       // eski tek-sayı kayıtları
@@ -2161,7 +2196,7 @@ function hedefGunHesapla(urun, seriHarfi){
   const a=hedefAyar(urun);
   if(seriHarfi && a[seriHarfi]) return +a[seriHarfi];
   if(a.genel) return +a.genel;
-  const up=program[urun];
+  const up=program[programUrun(urun)];
   if(!up) return 30;
   const gunler=Object.keys(up).map(Number);
   return gunler.length? Math.max(...gunler)+3 : 30;
@@ -2274,7 +2309,7 @@ function hizliOnizleGoster(p, satirlarMetin){
         (t.olcumler=t.olcumler||[]).unshift({tarih:bugun, ph:x.ph||'', tuz:x.tuz||'', sicaklik:x.sicaklik||'', not:''});
         olcum++;
       }else if(x.eylem==='devirdaim'){
-        const g=gun(t); const up=program[t.urun]; const pr=up&&up[g];
+        const g=gun(t); const up=program[programUrun(t.urun)]; const pr=up&&up[g];
         const kodGorev=pr&&pr.g&&pr.g.find(k=>k==='D'||k==='D2'||k==='DV');
         if(kodGorev){
           const d=isemri[bugun]=isemri[bugun]||{};
@@ -2626,15 +2661,22 @@ function qrOlustur(){
   const p=panel(`
     <div class="pbar"><h2>QR Kodları</h2><button class="icon" data-kapat>Kapat</button></div>
     <p class="hint">Tank başına bir QR üretilir. Yapıştırdıktan sonra QR'ı okutan kişi doğrudan o tankın bugünkü işini görür ve onaylar.</p>
+    ${basilmamis.length?`<button class="btn ghost" id="qHepsiBasildi" style="margin-bottom:10px">✓ Mevcut ${basilmamis.length} tankın QR'ı zaten basılı</button>
+    <p class="hint" style="margin-top:-4px">Etiketleri daha önce bastıysan buna dokun — bundan sonra sadece <b>yeni eklenen</b> tanklar listelenir.</p>`:''}
     <details style="margin-bottom:10px">
-      <summary style="cursor:pointer;color:var(--muted);font-size:12.5px">Elle "basıldı" işaretle (kod yapıştır)</summary>
-      <textarea id="qYapistir" rows="3" placeholder="A-002 A-003 A-004 ... (boşluk veya alt satırla ayır)" style="margin-top:8px"></textarea>
+      <summary style="cursor:pointer;color:var(--muted);font-size:12.5px">Elle işaretle (kod yapıştır)</summary>
+      <textarea id="qYapistir" rows="3" placeholder="A-002 A-003 A-004 ..." style="margin-top:8px"></textarea>
       <button class="btn ghost" id="qYapistirUygula" style="margin-top:6px">Bu kodları "basıldı" işaretle</button>
     </details>
     <div class="seg" style="flex-wrap:wrap">
       <button id="qm0" aria-pressed="true">🆕 Basılmamışlar (${basilmamis.length})</button>
       <button id="qm1" aria-pressed="false">Aralık seç</button>
+      <button id="qm3" aria-pressed="false">📋 Kod listesi</button>
       <button id="qm2" aria-pressed="false">Tümü (${aktifTanklar.length})</button>
+    </div>
+    <div id="qListe" style="display:none">
+      <p class="hint">Basmak istediğin tank kodlarını yapıştır:</p>
+      <textarea id="qListeMetin" rows="3" placeholder="A-009 A-057 A-059 D-097 ..."></textarea>
     </div>
     <div id="qYeni">
       ${basilmamis.length
@@ -2667,6 +2709,8 @@ function qrOlustur(){
     q('#qm2').setAttribute('aria-pressed', m==='tumu');
     q('#qYeni').style.display   = m==='yeni'   ? '' : 'none';
     q('#qAralik').style.display = m==='aralik' ? '' : 'none';
+    q('#qListe').style.display  = m==='liste'  ? '' : 'none';
+    q('#qm3').setAttribute('aria-pressed', m==='liste');
   };
   ['2','3','32','4'].forEach(n=>{
     q('#qb'+n).onclick=()=>{
@@ -2676,6 +2720,18 @@ function qrOlustur(){
       if(alan) alan.className=yzBoy;
     };
   });
+  const qhb=q('#qHepsiBasildi');
+  if(qhb) qhb.onclick=async()=>{
+    const ok=await onayDialog('Hepsi Basılı Say',
+      basilmamis.length+' tankın QR etiketi basılmış sayılacak.\n\n'+
+      'Bundan sonra bu ekranda sadece YENİ eklenen tanklar görünür.','Evet, basılı');
+    if(!ok) return;
+    const bug=bugunISO();
+    basilmamis.forEach(t=>{ const tt=tanklar.find(x=>x.id===t.id); if(tt) tt.qrBasildi=bug; });
+    await sSet(K_TANK,tanklar);
+    toast(basilmamis.length+' tank basılı işaretlendi');
+    kapat(); qrOlustur();
+  };
   q('#qYapistirUygula').onclick=async()=>{
     const ham=q('#qYapistir').value.trim();
     if(!ham){ toast('Kod listesi boş'); return; }
@@ -2691,6 +2747,7 @@ function qrOlustur(){
   };
   q('#qm0').onclick=()=>modAyar('yeni');
   q('#qm1').onclick=()=>modAyar('aralik');
+  q('#qm3').onclick=()=>modAyar('liste');
   q('#qm2').onclick=()=>modAyar('tumu');
   modAyar('yeni');
   q('#q_uret').onclick=()=>{
@@ -2698,6 +2755,19 @@ function qrOlustur(){
     if(mod==='yeni'){
       liste=aktifTanklar.filter(t=>!t.qrBasildi);
       if(!liste.length){ toast('Basılmamış tank yok'); return; }
+    }
+    else if(mod==='liste'){
+      const ham=q('#qListeMetin').value.trim();
+      if(!ham){ toast('Kod listesi boş'); return; }
+      const istenen=[...new Set(ham.split(/[\s,;]+/).map(s=>s.trim().toUpperCase()).filter(Boolean))];
+      const bulunan=[], yok=[];
+      istenen.forEach(k=>{
+        const t=aktifTanklar.find(x=>x.kod===k) || aktifTanklar.find(x=>kodBul(x.kod)===kodBul(k));
+        if(t) bulunan.push(t); else yok.push(k);
+      });
+      if(!bulunan.length){ toast('Hiçbir kod eşleşmedi'); return; }
+      if(yok.length) toast(yok.length+' kod bulunamadı: '+yok.slice(0,4).join(', '));
+      liste=bulunan;
     }
     else if(mod==='tumu'){ liste=aktifTanklar; }
     else{
@@ -2809,7 +2879,7 @@ function cizTankIsEmri(kod){
     return;
   }
   const g=gun(t), d=durum(t);
-  const up=program[t.urun]||{};
+  const up=program[programUrun(t.urun)]||{};
   const bugun=bugunISO();
   const bugunProg=up[g];
   const done=isemri[bugun]||{};
@@ -3076,9 +3146,14 @@ function yedek(){
   devirdaimSure=await sGet(K_DEV,{...DEV_VARSAYILAN});
   personel=await sGet(K_PERSONEL,[]);
   urunHedef=nesneCoz(await sGet(K_HEDEF,{}))||{};
+  urunEslesme=nesneCoz(await sGet(K_URUNES,{}))||{};
+  /* Kavanozluk No.2 varsayılan olarak Salatalık No.2 programına bağlı */
+  if(!urunEslesme['Kavanozluk No.2'] && program['Salatalık No.2']){
+    urunEslesme['Kavanozluk No.2']='Salatalık No.2';
+  }
   /* eski sürümden gelen ürün adlarını eşle */
   const esle={'Salatalık No.1':'Salatalık No.1'};
-  tanklar.forEach(t=>{ if(t.urun&&!program[t.urun]){ const k=Object.keys(program).find(u=>u.toLocaleLowerCase('tr')===t.urun.toLocaleLowerCase('tr')); if(k) t.urun=k; } });
+  tanklar.forEach(t=>{ if(t.urun&&!program[programUrun(t.urun)]){ const k=Object.keys(program).find(u=>u.toLocaleLowerCase('tr')===t.urun.toLocaleLowerCase('tr')); if(k) t.urun=k; } });
   // hedefi ürün bazında düşürülmüş ama eski kayıtta kırmızı görünen tankları düzelt
   let duzeltme=false;
   tanklar.forEach(t=>{
