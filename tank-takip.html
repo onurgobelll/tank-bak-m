@@ -86,6 +86,14 @@ main{padding:8px 16px 0}
 .gorev.gecikmis .gk{color:#9A3412}
 .gecRozet{color:#DC2626;font-weight:700}
 .gecSay{color:#DC2626;margin-left:3px;font-size:.85em}
+.gecUyari{display:flex;align-items:center;gap:11px;width:100%;text-align:left;
+  background:#FEF2F2;border:1.5px solid #FCA5A5;border-radius:14px;padding:12px 14px;margin-bottom:11px;
+  box-shadow:0 2px 10px rgba(220,38,38,.09);transition:transform .12s}
+.gecUyari:active{transform:scale(.985)}
+.gecIkon{font-size:21px;line-height:1}
+.gecMetin{font-size:12px;color:#B91C1C}
+.gecMetin b{display:block;font-family:var(--cond);font-size:18px;letter-spacing:.03em;color:#991B1B;text-transform:uppercase}
+.gecOk{margin-left:auto;font-size:24px;color:#DC2626;line-height:1}
 .chip.chipGec{border-color:#FCA5A5;color:#B91C1C}
 .chip.chipGec b{color:#DC2626}
 .chip.chipGec[aria-pressed="true"]{background:#DC2626;color:#fff;border-color:transparent}
@@ -379,7 +387,7 @@ textarea{min-height:110px;resize:vertical;font-family:ui-monospace,monospace;fon
 const FIREBASE_URL = 'https://tank-takip-default-rtdb.firebaseio.com';
 const K_HEDEF='tanktakip:urunHedef';
 const K_URUNES='tanktakip:urunEslesme';
-const SURUM='02.08.2026 08:14';
+const SURUM='02.08.2026 08:49';
 let urunHedef={};
 const K_PERSONEL='tanktakip:personel', K_AD_KILIT='tanktakip:cihazKilit';
 const K_TANK='tanktakip:tanklar', K_PROG='tanktakip:programv2', K_IS='tanktakip:isemri', K_VERI='tanktakip:veriYuklendi', K_DEV='tanktakip:devirdaimSure';
@@ -541,7 +549,7 @@ async function simdiSenkronEt(){
     return;
   }
   const [t,i,dv,pe,uh]=await Promise.all([fbGet(K_TANK),fbGet(K_IS),fbGet(K_DEV),fbGet(K_PERSONEL),fbGet(K_HEDEF)]);
-  if(t!==undefined) tanklar=t;
+  if(t!==undefined){ t.forEach(x=>{ if(x.kod) x.kod=kodDuzelt(x.kod); }); tanklar=t; }
   if(pd.data!==undefined) program=programNormalize(nesneCoz(pd.data));
   if(i!==undefined) isemri=i;
   if(dv!==undefined) devirdaimSure=dv;
@@ -562,7 +570,10 @@ function canliSenkronBaslat(){
     if(pe!==undefined) personel=pe;
     const uh=await fbGet(K_HEDEF); if(uh!==undefined) urunHedef=nesneCoz(uh);
     let degisti=false;
-    if(t!==undefined && JSON.stringify(t)!==JSON.stringify(tanklar)){ tanklar=t; degisti=true; }
+    if(t!==undefined){
+      t.forEach(x=>{ if(x.kod){ const y=kodDuzelt(x.kod); if(y!==x.kod) x.kod=y; } });
+      if(JSON.stringify(t)!==JSON.stringify(tanklar)){ tanklar=t; degisti=true; }
+    }
     if(p!==undefined){ const pN=programNormalize(nesneCoz(p)); if(JSON.stringify(pN)!==JSON.stringify(program)){ program=pN; degisti=true; } }
     if(i!==undefined && JSON.stringify(i)!==JSON.stringify(isemri)){ isemri=i; degisti=true; }
     if(degisti){ if(qrGoruntuKod) cizTankIsEmri(qrGoruntuKod); else ciz(); }
@@ -1355,7 +1366,7 @@ function cizIsEmri(){
       if(!tuzC && !urunC && !gecC) return '';
       return `<div class="chips gorevChips" id="ieGorevChips">
         <button class="chip" data-g="hepsi" aria-pressed="${ieGorev==='hepsi'}">Tüm işler</button>
-        ${tuzC}${urunC}${gecC}
+        ${gecC}${tuzC}${urunC}
       </div>`;
     })()}`;
   if(document.getElementById('ieChips')){
@@ -1399,6 +1410,12 @@ function cizIsEmri(){
            <div><span>Tank</span><b>${liste.length}</b></div>
            <div><span>Tuz</span><b>${tuzToplam?tuzToplam+' kg':'—'}</b></div>`}
     </div>
+    ${(ieGorev!=='GEC' && gecikTumu.length)?`
+      <button class="gecUyari" id="gecUyariBtn">
+        <span class="gecIkon">⏰</span>
+        <span class="gecMetin"><b>${gecikTumu.length} iş geçmiş günlerden kalmış</b>Dokun ve tamamla</span>
+        <span class="gecOk">›</span>
+      </button>`:''}
     ${ieGorev==='GEC' ? ''
       : (bitti>=toplamGorev?`<div class="tamamRozet">✓ Bugünün işleri tamam${ieUrun!=='hepsi'?' — '+ieUrun:''}</div>`
       :(yonetici?`<button class="btn hepsiBtn" id="hepsiOnay">Tümünü Onayla · ${toplamGorev-bitti} görev${ieUrun!=='hepsi'?' ('+ieUrun+')':''}</button>`:''))}
@@ -1492,6 +1509,9 @@ function cizIsEmri(){
       await sSet(K_IS,isemri); cizIsEmri();
       toast(secilenler.length+' tank onaylandı');
       return;
+    }
+    if(ev.target.closest('#gecUyariBtn')){
+      ieGorev='GEC'; cizIsEmri(); window.scrollTo(0,0); return;
     }
     if(ev.target.closest('#hepsiOnay')){
       if(!yonetici){ toast('Toplu onay için yönetici PIN gerekli'); return; }
@@ -3257,11 +3277,11 @@ function yedek(){
     urunEslesme['Kelek (Kavanozluk)']='Kelek';
   }
   /* tank kodlarını tek biçime getir: A-11 -> A-011 */
-  (()=>{
+  {
     let n=0;
     tanklar.forEach(t=>{ if(t.kod){ const y=kodDuzelt(t.kod); if(y!==t.kod){ t.kod=y; n++; } } });
-    if(n) sSet(K_TANK,tanklar);
-  })();
+    if(n){ await sSet(K_TANK,tanklar); toast(n+' tank kodu düzeltildi'); }
+  }
   /* eski sürümden kalan hatalı ad varsa temizle */
   if(urunEslesme['Kavanozluk Kelek']){
     delete urunEslesme['Kavanozluk Kelek'];
