@@ -379,6 +379,7 @@ textarea{min-height:110px;resize:vertical;font-family:ui-monospace,monospace;fon
 const FIREBASE_URL = 'https://tank-takip-default-rtdb.firebaseio.com';
 const K_HEDEF='tanktakip:urunHedef';
 const K_URUNES='tanktakip:urunEslesme';
+const SURUM='02.08.2026 06:55';
 let urunHedef={};
 const K_PERSONEL='tanktakip:personel', K_AD_KILIT='tanktakip:cihazKilit';
 const K_TANK='tanktakip:tanklar', K_PROG='tanktakip:programv2', K_IS='tanktakip:isemri', K_VERI='tanktakip:veriYuklendi', K_DEV='tanktakip:devirdaimSure';
@@ -1688,6 +1689,20 @@ function cizProgram(){
   }
   document.getElementById('btnKilit').onclick=yoneticiGirisi;
   const bs=document.getElementById('btnSenk'); if(bs) bs.onclick=simdiSenkronEt;
+  const zg=document.getElementById('zorlaGuncelle');
+  if(zg) zg.onclick=async()=>{
+    const ok=await onayDialog('Güncellemeyi Zorla',
+      'Önbellek temizlenip uygulama yeniden yüklenecek.\nVerilerin (tanklar, program, onaylar) silinmez.','Güncelle');
+    if(!ok) return;
+    try{
+      if('caches' in window){ const ks=await caches.keys(); await Promise.all(ks.map(k=>caches.delete(k))); }
+      if(navigator.serviceWorker){
+        const rs=await navigator.serviceWorker.getRegistrations();
+        await Promise.all(rs.map(r=>r.unregister()));
+      }
+    }catch(e){}
+    location.replace(location.pathname+'?v='+Date.now());
+  };
   document.querySelectorAll('[data-esKaldir]').forEach(b=>b.onclick=async()=>{
     const u=b.dataset.eskaldir||b.getAttribute('data-esKaldir');
     const ok=await onayDialog('Bağlantıyı Kaldır',
@@ -1776,6 +1791,12 @@ function cizProgram(){
   ${Object.entries(urunEslesme).map(([u,k])=>`
     <div class="log"><span class="d">↳</span><span class="v"><b>${u}</b> → ${k}
       ${yonetici?`<button class="icon" data-esKaldir="${u}" style="margin-left:8px;padding:4px 9px;font-size:11px">Kaldır</button>`:''}</span></div>`).join('')}`:''}
+  <div class="sec">Uygulama Sürümü</div>
+  <div class="grafKutu">
+    <p class="hint" style="margin:0">Yüklü sürüm: <b>${SURUM}</b></p>
+    <button class="btn ghost" id="zorlaGuncelle" style="margin-top:10px">🔄 Güncellemeyi Zorla (önbelleği temizle)</button>
+    <p class="hint">Yeni sürüm yüklediysen ve değişiklik görünmüyorsa buna dokun.</p>
+  </div>
   <div class="sec">Bulut Bağlantısı</div>
   <div class="grafKutu">
     <p class="hint" style="margin:0">${!FIREBASE_URL?'<b style="color:var(--alarm)">Adres tanımlı değil</b> — veriler sadece bu telefonda.'
@@ -1990,7 +2011,7 @@ function form(id){
       if(!sr||!(s>=b)){ toast('Seri ve numaraları kontrol et'); return; }
       let n=0;
       for(let i=b;i<=s;i++){
-        const kod=sr+'-'+i;
+        const kod=kodDuzelt(sr+'-'+i);
         if(tanklar.some(x=>x.kod===kod&&!x.bosaltildi)) continue;
         tanklar.push({id:'t'+Date.now()+'_'+i,kod,kapasite:kap,...ortak,bosaltildi:'',olcumler:[]});
         n++;
@@ -1998,7 +2019,7 @@ function form(id){
       await sSet(K_TANK,tanklar); kapat(); ciz(); toast(n+' tank eklendi');
       return;
     }
-    const kod=q('#f_kod').value.trim().toUpperCase();
+    const kod=kodDuzelt(q('#f_kod').value);
     if(!kod){ q('#f_kod').focus(); return; }
     const veri={kod,kapasite:q('#f_kap').value.trim().toUpperCase(),...ortak};
     if(t) Object.assign(t,veri);
@@ -2264,11 +2285,19 @@ function kodNormal(k){
   const m=String(k||'').toUpperCase().replace(/\s+/g,'').match(/^([A-ZÇĞİÖŞÜ]{1,3})-?0*(\d{1,4})$/);
   return m ? m[1]+'-'+parseInt(m[2],10) : String(k||'').toUpperCase().replace(/\s+/g,'');
 }
+/* Tank kodunu tek biçime getir: A11 / A-11 / a-11 -> A-011 ; A-1150 -> A-1150 */
+function kodDuzelt(k){
+  const m=String(k||'').toLocaleUpperCase('tr').replace(/\s+/g,'')
+    .match(/^([A-ZÇĞİÖŞÜ]{1,3})-?(\d{1,5})$/);
+  if(!m) return String(k||'').toLocaleUpperCase('tr').replace(/\s+/g,'');
+  const n=m[2].replace(/^0+/,'')||'0';
+  return m[1]+'-'+(n.length<3 ? n.padStart(3,'0') : n);
+}
 function kodBul(s){
   let m=s.match(/^([^\s]+)\s+nolu\s+tank/i);
-  if(m) return m[1].toUpperCase();
-  m=s.match(/([A-ZÇĞİÖŞÜ]{1,3}-?\d{1,4})/i);
-  return m? m[1].toUpperCase() : null;
+  if(m) return kodDuzelt(m[1]);
+  m=s.match(/([A-ZÇĞİÖŞÜ]{1,3}-?\d{1,5})/i);
+  return m? kodDuzelt(m[1]) : null;
 }
 function satirAyristir(satir){
   const s=satir.trim().replace(/[,;]+$/,'').trim();
@@ -2470,7 +2499,7 @@ function satirlariTanka(satirlar){
     }
     const kodHam=String(r[harita.kod]||'').trim();
     if(!kodHam) continue;
-    const kod=kodBul(kodHam)||kodHam.toLocaleUpperCase('tr').replace(/\s+/g,'');
+    const kod=kodBul(kodHam)||kodDuzelt(kodHam);
     if(!/^[A-ZÇĞİÖŞÜ]-?\d+/i.test(kod)) continue;
     const urunHam=sonUrunHam;
     let urun=null;
@@ -2681,7 +2710,7 @@ async function qrOku(){
   `);
   const q=s=>p.querySelector(s);
   q('#qrGit').onclick=()=>{
-    const kod=(q('#qrElle').value||'').trim().toUpperCase();
+    const kod=kodDuzelt(q('#qrElle').value||'');
     if(!kod){ toast('Tank kodu yaz'); return; }
     dur(); kapat(); cizTankIsEmri(kod);
   };
@@ -2709,8 +2738,8 @@ async function qrOku(){
           const ham=bulunan[0].rawValue||'';
           let kod=null;
           const m=ham.match(/[?&]tank=([^&]+)/i);
-          if(m) kod=decodeURIComponent(m[1]).toUpperCase();
-          else if(/^[A-ZÇĞİÖŞÜ]{1,3}-?\d{1,4}$/i.test(ham.trim())) kod=ham.trim().toUpperCase();
+          if(m) kod=kodDuzelt(decodeURIComponent(m[1]));
+          else if(/^[A-ZÇĞİÖŞÜ]{1,3}-?\d{1,5}$/i.test(ham.trim())) kod=kodDuzelt(ham.trim());
           if(kod){
             if(navigator.vibrate) navigator.vibrate(60);
             dur(); kapat(); cizTankIsEmri(kod);
@@ -3227,6 +3256,12 @@ function yedek(){
   if(!urunEslesme['Kelek (Kavanozluk)'] && program['Kelek']){
     urunEslesme['Kelek (Kavanozluk)']='Kelek';
   }
+  /* tank kodlarını tek biçime getir: A-11 -> A-011 */
+  (()=>{
+    let n=0;
+    tanklar.forEach(t=>{ if(t.kod){ const y=kodDuzelt(t.kod); if(y!==t.kod){ t.kod=y; n++; } } });
+    if(n) sSet(K_TANK,tanklar);
+  })();
   /* eski sürümden kalan hatalı ad varsa temizle */
   if(urunEslesme['Kavanozluk Kelek']){
     delete urunEslesme['Kavanozluk Kelek'];
@@ -3244,7 +3279,7 @@ function yedek(){
   });
   if(duzeltme) await sSet(K_TANK,tanklar);
   const qsTank=new URLSearchParams(location.search).get('tank');
-  if(qsTank){ cizTankIsEmri(qsTank.toUpperCase()); }
+  if(qsTank){ cizTankIsEmri(kodDuzelt(qsTank)); }
   else{ ciz(); }
   canliSenkronBaslat();
 })();
