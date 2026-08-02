@@ -86,6 +86,10 @@ main{padding:8px 16px 0}
 .gorev.gecikmis .gk{color:#9A3412}
 .gecRozet{color:#DC2626;font-weight:700}
 .gecSay{color:#DC2626;margin-left:3px;font-size:.85em}
+.chip.chipGec{border-color:#FCA5A5;color:#B91C1C}
+.chip.chipGec b{color:#DC2626}
+.chip.chipGec[aria-pressed="true"]{background:#DC2626;color:#fff;border-color:transparent}
+.chip.chipGec[aria-pressed="true"] b{color:#fff}
 .pill.kapaliPill{background:#E0E7FF;color:#3730A3;border-color:#C7D2FE;font-weight:700}
 .pill.late{background:#DC2626;color:#fff;border-color:transparent;font-weight:700}
 .empty{border:1px dashed var(--line);border-radius:14px;padding:26px 20px;text-align:center;color:var(--muted)}
@@ -1297,8 +1301,11 @@ function cizIsEmri(){
   const gorevTipleri=GOREV_SIRA.filter(k=>grupHepsi[k]);
   const gecikKodlar=new Set(gecikTumu.map(x=>x.gorev));
   const gecikVar=k=> k==='DEV' ? DEVIR_KODLARI.some(d=>gecikKodlar.has(d)) : gecikKodlar.has(k);
-  if(ieGorev!=='hepsi' && !grupHepsi[ieGorev] && !gecikVar(ieGorev)) ieGorev='hepsi';
-  let grup = ieGorev==='hepsi' ? grupHepsi : {[ieGorev]:grupHepsi[ieGorev]};
+  if(ieGorev==='GEC'){ if(!gecikTumu.length) ieGorev='hepsi'; }
+  else if(ieGorev!=='hepsi' && !grupHepsi[ieGorev] && !gecikVar(ieGorev)) ieGorev='hepsi';
+  let grup = ieGorev==='hepsi' ? grupHepsi
+           : ieGorev==='GEC'   ? {}
+           : (grupHepsi[ieGorev] ? {[ieGorev]:grupHepsi[ieGorev]} : {});
   // devirdaim kodlarını (D/D2/DV) tek başlık altında birleştir
   const devVar=DEVIR_KODLARI.filter(k=>grup[k]);
   if(devVar.length){
@@ -1340,10 +1347,14 @@ function cizIsEmri(){
         return `<button class="chip" data-g="${k}" aria-pressed="${ieGorev===k}">${ad}<b>${b}${g?`<span class="gecSay">+${g}</span>`:''}</b></button>`;
       };
       const tuzC=chip('T','Sadece Tuz'), urunC=chip('U','🔍 Ürün Kontrol');
-      if(!tuzC && !urunC) return '';
+      const gecTop=gecikTumu.filter(x=>ieUrun==='hepsi'||(x.t.urun||'—')===ieUrun).length;
+      const gecC = gecTop
+        ? `<button class="chip chipGec" data-g="GEC" aria-pressed="${ieGorev==='GEC'}">⏰ Geciken İşler<b>${gecTop}</b></button>`
+        : '';
+      if(!tuzC && !urunC && !gecC) return '';
       return `<div class="chips gorevChips" id="ieGorevChips">
         <button class="chip" data-g="hepsi" aria-pressed="${ieGorev==='hepsi'}">Tüm işler</button>
-        ${tuzC}${urunC}
+        ${tuzC}${urunC}${gecC}
       </div>`;
     })()}`;
   if(document.getElementById('ieChips')){
@@ -1372,22 +1383,27 @@ function cizIsEmri(){
   let gecikenler=gecikTumu.slice();
   /* aktif ürün / görev filtresine uy — "Ürün Kontrol" seçiliyken sadece o gecikmeler görünsün */
   if(ieUrun!=='hepsi') gecikenler=gecikenler.filter(x=>(x.t.urun||'—')===ieUrun);
-  if(ieGorev!=='hepsi'){
+  if(ieGorev!=='hepsi' && ieGorev!=='GEC'){
     const kabul = ieGorev==='DEV' ? DEVIR_KODLARI : [ieGorev];
     gecikenler=gecikenler.filter(x=>kabul.includes(x.gorev));
   }
   gecikenler.sort((a,b)=> a.tarih===b.tarih ? a.t.kod.localeCompare(b.t.kod,'tr',{numeric:true}) : (a.tarih<b.tarih?-1:1));
   e.innerHTML=`
     <div class="ozet">
-      <div><span>Görev</span><b>${bitti}/${toplamGorev}</b></div>
-      <div><span>Tank</span><b>${liste.length}</b></div>
-      <div><span>Tuz</span><b>${tuzToplam?tuzToplam+' kg':'—'}</b></div>
+      ${ieGorev==='GEC'
+        ? `<div><span>Geciken</span><b style="color:var(--alarm)">${gecikenler.length}</b></div>
+           <div><span>Tank</span><b>${new Set(gecikenler.map(x=>x.t.id)).size}</b></div>
+           <div><span>Tuz</span><b>${gecikenler.reduce((n,x)=>n+(x.gorev==='T'?(x.tuzKg||0):0),0)||'—'}${gecikenler.some(x=>x.gorev==='T')?' kg':''}</b></div>`
+        : `<div><span>Görev</span><b>${bitti}/${toplamGorev}</b></div>
+           <div><span>Tank</span><b>${liste.length}</b></div>
+           <div><span>Tuz</span><b>${tuzToplam?tuzToplam+' kg':'—'}</b></div>`}
     </div>
-    ${bitti>=toplamGorev?`<div class="tamamRozet">✓ Bugünün işleri tamam${ieUrun!=='hepsi'?' — '+ieUrun:''}</div>`
-      :(yonetici?`<button class="btn hepsiBtn" id="hepsiOnay">Tümünü Onayla · ${toplamGorev-bitti} görev${ieUrun!=='hepsi'?' ('+ieUrun+')':''}</button>`:'')}
+    ${ieGorev==='GEC' ? ''
+      : (bitti>=toplamGorev?`<div class="tamamRozet">✓ Bugünün işleri tamam${ieUrun!=='hepsi'?' — '+ieUrun:''}</div>`
+      :(yonetici?`<button class="btn hepsiBtn" id="hepsiOnay">Tümünü Onayla · ${toplamGorev-bitti} görev${ieUrun!=='hepsi'?' ('+ieUrun+')':''}</button>`:''))}
     ${gecikenler.length?`
     <div class="grup gec">
-      <h3 style="color:var(--alarm)">⏰ Yapılmayan İşler<small>${gecikenler.length} görev${ieGorev!=='hepsi'?' · '+(ieGorev==='DEV'?'Devirdaim':GOREV[ieGorev]):''}${ieUrun!=='hepsi'?' · '+ieUrun:''}</small></h3>
+      <h3 style="color:var(--alarm)">⏰ Yapılmayan İşler<small>${gecikenler.length} görev${(ieGorev!=='hepsi'&&ieGorev!=='GEC')?' · '+(ieGorev==='DEV'?'Devirdaim':(GOREV[ieGorev]||'')):''}${ieUrun!=='hepsi'?' · '+ieUrun:''}</small></h3>
       ${gecikenler.map(x=>{
         const key=x.t.id+':'+x.gorev;
         return `<button class="gorev" data-key="${key}" data-tarih="${x.tarih}" style="border-color:#6A2C25">
