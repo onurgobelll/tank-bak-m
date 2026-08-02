@@ -82,6 +82,10 @@ main{padding:8px 16px 0}
 .pill.soon{color:#B45309;border-color:rgba(217,119,6,.25);background:#FEF3C7}
 .pill.ready{background:#15803D;color:#fff;border-color:transparent;font-weight:700}
 .pill.bugunPill{background:#D97706;color:#fff;border-color:transparent;font-weight:700}
+.gorev.gecikmis{background:#FFF7ED;border-color:#FDBA74}
+.gorev.gecikmis .gk{color:#9A3412}
+.gecRozet{color:#DC2626;font-weight:700}
+.gecSay{color:#DC2626;margin-left:3px;font-size:.85em}
 .pill.kapaliPill{background:#E0E7FF;color:#3730A3;border-color:#C7D2FE;font-weight:700}
 .pill.late{background:#DC2626;color:#fff;border-color:transparent;font-weight:700}
 .empty{border:1px dashed var(--line);border-radius:14px;padding:26px 20px;text-align:center;color:var(--muted)}
@@ -1277,16 +1281,23 @@ document.getElementById('fab').onclick=()=>form();
 function cizIsEmri(){
   if(!ieTarih) ieTarih=bugunISO();
   const hepsiListe=isEmriUret(ieTarih);
+  /* geçmişte yapılmamış işler — chip ve filtre kararları buna da baksın */
+  const gecikTumu=(ieTarih===bugunISO())?gecikenIsler(ieTarih,7):[];
   const urunSay={};
   hepsiListe.forEach(x=>{ const u=x.t.urun||'—'; urunSay[u]=(urunSay[u]||0)+1; });
   const urunAdlari=Object.keys(urunSay).sort();
-  if(ieUrun!=='hepsi' && !urunAdlari.includes(ieUrun)) ieUrun='hepsi';
+  const gecikUrunler=new Set(gecikTumu.map(x=>x.t.urun||'—'));
+  if(ieUrun!=='hepsi' && !urunAdlari.includes(ieUrun) && !gecikUrunler.has(ieUrun)) ieUrun='hepsi';
   const liste = ieUrun==='hepsi' ? hepsiListe : hepsiListe.filter(x=>(x.t.urun||'—')===ieUrun);
   const done=isemri[ieTarih]||{};
+  /* gecikmiş satırın onayı kendi tarihine yazılır */
+  const doneAl=(x,k)=> x._gecikme ? ((isemri[x._gecikme]||{})[x.t.id+':'+k]) : done[x.t.id+':'+k];
   const grupHepsi={};
   liste.forEach(x=>x.gorevler.forEach(k=>{(grupHepsi[k]=grupHepsi[k]||[]).push(x);}));
   const gorevTipleri=GOREV_SIRA.filter(k=>grupHepsi[k]);
-  if(ieGorev!=='hepsi' && !grupHepsi[ieGorev]) ieGorev='hepsi';
+  const gecikKodlar=new Set(gecikTumu.map(x=>x.gorev));
+  const gecikVar=k=> k==='DEV' ? DEVIR_KODLARI.some(d=>gecikKodlar.has(d)) : gecikKodlar.has(k);
+  if(ieGorev!=='hepsi' && !grupHepsi[ieGorev] && !gecikVar(ieGorev)) ieGorev='hepsi';
   let grup = ieGorev==='hepsi' ? grupHepsi : {[ieGorev]:grupHepsi[ieGorev]};
   // devirdaim kodlarını (D/D2/DV) tek başlık altında birleştir
   const devVar=DEVIR_KODLARI.filter(k=>grup[k]);
@@ -1320,11 +1331,21 @@ function cizIsEmri(){
       <button class="chip" data-u="hepsi" aria-pressed="${ieUrun==='hepsi'}">Tümü<b>${hepsiListe.length}</b></button>
       ${urunAdlari.map(u=>`<button class="chip" data-u="${u}" aria-pressed="${ieUrun===u}">${u}<b>${urunSay[u]}</b></button>`).join('')}
     </div>`:''}
-    ${(grupHepsi['T']||grupHepsi['U'])?`<div class="chips gorevChips" id="ieGorevChips">
-      <button class="chip" data-g="hepsi" aria-pressed="${ieGorev==='hepsi'}">Tüm işler</button>
-      ${grupHepsi['T']?`<button class="chip" data-g="T" aria-pressed="${ieGorev==='T'}">Sadece Tuz<b>${grupHepsi['T'].length}</b></button>`:''}
-      ${grupHepsi['U']?`<button class="chip" data-g="U" aria-pressed="${ieGorev==='U'}">🔍 Ürün Kontrol<b>${grupHepsi['U'].length}</b></button>`:''}
-    </div>`:''}`;
+    ${(()=>{
+      const gecSay=k=>gecikTumu.filter(x=>x.gorev===k && (ieUrun==='hepsi'||(x.t.urun||'—')===ieUrun)).length;
+      const bugSay=k=>(grupHepsi[k]||[]).length;
+      const chip=(k,ad)=>{
+        const b=bugSay(k), g=gecSay(k);
+        if(!b && !g) return '';
+        return `<button class="chip" data-g="${k}" aria-pressed="${ieGorev===k}">${ad}<b>${b}${g?`<span class="gecSay">+${g}</span>`:''}</b></button>`;
+      };
+      const tuzC=chip('T','Sadece Tuz'), urunC=chip('U','🔍 Ürün Kontrol');
+      if(!tuzC && !urunC) return '';
+      return `<div class="chips gorevChips" id="ieGorevChips">
+        <button class="chip" data-g="hepsi" aria-pressed="${ieGorev==='hepsi'}">Tüm işler</button>
+        ${tuzC}${urunC}
+      </div>`;
+    })()}`;
   if(document.getElementById('ieChips')){
     document.getElementById('ieChips').onclick=e2=>{
       const b=e2.target.closest('.chip'); if(b){ ieUrun=b.dataset.u; cizIsEmri(); }
@@ -1348,7 +1369,14 @@ function cizIsEmri(){
     e.innerHTML=`<div class="empty"><b>Bu tarihte iş yok</b>${tanklar.some(t=>!t.bosaltildi)?'Programda bu güne görev tanımlı değil.':'Önce Tanklar sekmesinden dolum kaydı aç.'}</div>`;
     return;
   }
-  const gecikenler=(ieTarih===bugunISO())?gecikenIsler(ieTarih,3):[];
+  let gecikenler=gecikTumu.slice();
+  /* aktif ürün / görev filtresine uy — "Ürün Kontrol" seçiliyken sadece o gecikmeler görünsün */
+  if(ieUrun!=='hepsi') gecikenler=gecikenler.filter(x=>(x.t.urun||'—')===ieUrun);
+  if(ieGorev!=='hepsi'){
+    const kabul = ieGorev==='DEV' ? DEVIR_KODLARI : [ieGorev];
+    gecikenler=gecikenler.filter(x=>kabul.includes(x.gorev));
+  }
+  gecikenler.sort((a,b)=> a.tarih===b.tarih ? a.t.kod.localeCompare(b.t.kod,'tr',{numeric:true}) : (a.tarih<b.tarih?-1:1));
   e.innerHTML=`
     <div class="ozet">
       <div><span>Görev</span><b>${bitti}/${toplamGorev}</b></div>
@@ -1359,13 +1387,13 @@ function cizIsEmri(){
       :(yonetici?`<button class="btn hepsiBtn" id="hepsiOnay">Tümünü Onayla · ${toplamGorev-bitti} görev${ieUrun!=='hepsi'?' ('+ieUrun+')':''}</button>`:'')}
     ${gecikenler.length?`
     <div class="grup gec">
-      <h3 style="color:var(--alarm)">Dünden Kalan<small>${gecikenler.length} görev</small></h3>
+      <h3 style="color:var(--alarm)">⏰ Yapılmayan İşler<small>${gecikenler.length} görev${ieGorev!=='hepsi'?' · '+(ieGorev==='DEV'?'Devirdaim':GOREV[ieGorev]):''}${ieUrun!=='hepsi'?' · '+ieUrun:''}</small></h3>
       ${gecikenler.map(x=>{
         const key=x.t.id+':'+x.gorev;
         return `<button class="gorev" data-key="${key}" data-tarih="${x.tarih}" style="border-color:#6A2C25">
           <span class="cb"></span>
           <span class="gk">${x.t.kod}</span>
-          <span class="gd"><b>${GOREV[x.gorev]}</b> · ${kisaTarih(x.tarih)} (${x.g}. gün)${x.gorev==='T'&&x.tuzKg?` · <b>${x.tuzKg} kg</b>`:''}</span>
+          <span class="gd"><b>${GOREV[x.gorev]}</b> · ${kisaTarih(x.tarih)} (${x.g}. gün) · <b style="color:var(--alarm)">${gunFark(x.tarih,bugunISO())} gün gecikti</b>${x.gorev==='T'&&x.tuzKg?` · <b>${x.tuzKg} kg</b>`:''} · ${x.t.urun||''}</span>
         </button>`;
       }).join('')}
     </div>`:''}
@@ -1394,13 +1422,15 @@ function cizIsEmri(){
         })():''}
         ${grup[k].map(x=>{
           const gk=x._kod||k;
-          const key=x.t.id+':'+gk, ok=!!done[key];
+          const key=x.t.id+':'+gk;
+          const kayit=doneAl(x,gk);
+          const ok=!!kayit;
           const secModu=(cokluGorev===k);
           const secili=cokluSecim.has(key);
-          return `<button class="gorev ${ok?'ok':''} ${secModu?'secModu':''} ${secili?'secili':''}" data-key="${key}">
+          return `<button class="gorev ${ok?'ok':''} ${secModu?'secModu':''} ${secili?'secili':''} ${x._gecikme?'gecikmis':''}" data-key="${key}"${x._gecikme?` data-tarih="${x._gecikme}"`:''}>
             <span class="cb"></span>
             <span class="gk">${x.t.kod}</span>
-            <span class="gd"><b>${x.g}. gün</b> · ${x.t.urun||''}${gk==='T'&&x.tuzKg?` · <b>${x.tuzKg} kg</b>`:''}${DEVIR_KODLARI.includes(gk)&&devSureDeger(x.t)?` · <b>${devSureDeger(x.t)} sa${x.t.devSure?' (özel)':''}</b>`:''}${ok&&done[key]&&done[key].k?`<span class="n">✓ ${done[key].k} · ${done[key].s||''}</span>`:''}</span>
+            <span class="gd">${x._gecikme?`<b class="gecRozet">⏰ ${kisaTarih(x._gecikme)}</b> · `:''}<b>${x.g}. gün</b> · ${x.t.urun||''}${gk==='T'&&x.tuzKg?` · <b>${x.tuzKg} kg</b>`:''}${DEVIR_KODLARI.includes(gk)&&devSureDeger(x.t)?` · <b>${devSureDeger(x.t)} sa${x.t.devSure?' (özel)':''}</b>`:''}${ok&&kayit.k?`<span class="n">✓ ${kayit.k} · ${kayit.s||''}</span>`:''}</span>
           </button>`;
         }).join('')}
       </div>`).join('')}`;
@@ -2178,13 +2208,17 @@ function detay(id){
 function trKucuk(s){
   return String(s||'').replace(/İ/g,'i').replace(/I/g,'ı').toLowerCase();
 }
+/* "no2", "no.2", "no 2", "no2tank", "no:2" hepsini yakalar — sonrasında harf gelmesi sorun değil,
+   ama "no21" gibi çok haneli sayıya takılmaz */
+const noN = n => new RegExp('no\\s*[.:]?\\s*'+n+'(?![0-9])','i');
 const URUN_DESENLERI=[
   /* kavanozluk + no.2 → ayrı isim, No.2 programına bağlı */
-  {re:/kavanozluk[^0-9]{0,12}no\s*[.:]?\s*2\b|no\s*[.:]?\s*2[^a-zçğıöşü]{0,12}kavanozluk/i, urun:'Kavanozluk No.2'},
-  {re:/salatal[ıi]k[^0-9]{0,12}no\s*[.:]?\s*1\b|no\s*[.:]?\s*1[^a-zçğıöşü]{0,3}salatal[ıi]k/i, urun:'Salatalık No.1'},
-  {re:/salatal[ıi]k[^0-9]{0,12}no\s*[.:]?\s*2\b|no\s*[.:]?\s*2[^a-zçğıöşü]{0,3}salatal[ıi]k/i, urun:'Salatalık No.2'},
-  {re:/salatal[ıi]k[^0-9]{0,12}no\s*[.:]?\s*3\b|no\s*[.:]?\s*3[^a-zçğıöşü]{0,3}salatal[ıi]k/i, urun:'Salatalık No.3'},
-  {re:/salatal[ıi]k/i, urun:'Salatalık No.1'},
+  {re:/kavanozluk/i, ek:noN(2), urun:'Kavanozluk No.2'},
+  /* kelek + kavanozluk → ayrı isim, Kelek programına bağlı */
+  {re:/kelek/i, ek:/kavanozluk/i, urun:'Kelek (Kavanozluk)'},
+  {re:/salatal[ıi]k|tur[şs]u|no\s*[.:]?\s*1/i, ek:noN(1), urun:'Salatalık No.1'},
+  {re:/salatal[ıi]k|tur[şs]u|no\s*[.:]?\s*2/i, ek:noN(2), urun:'Salatalık No.2'},
+  {re:/salatal[ıi]k|tur[şs]u|no\s*[.:]?\s*3/i, ek:noN(3), urun:'Salatalık No.3'},
   {re:/domates/i, urun:'Domates'},
   {re:/lahana/i, urun:'Lahana'},
   {re:/kelek/i, urun:'Kelek'},
@@ -2345,7 +2379,12 @@ function hizliOnizleGoster(p, satirlarMetin){
 /* ================= EXCEL / CSV TANK YÜKLEME ================= */
 function urunTani(metin){
   const s=trKucuk(metin);
-  for(const d of URUN_DESENLERI){ if(d.re.test(s)) return d.urun; }
+  for(const d of URUN_DESENLERI){
+    if(!d.re.test(s)) continue;
+    if(d.ek && !d.ek.test(s)) continue;   // numara şart olan kalıp
+    return d.urun;
+  }
+  /* salatalık yazmış ama numara okunamamış → tahmin etme, belirsiz dön */
   return null;
 }
 /* Ayrıştırılan ürün adını programdaki gerçek ada eşle */
@@ -3168,6 +3207,14 @@ function yedek(){
   /* Kavanozluk No.2 varsayılan olarak Salatalık No.2 programına bağlı */
   if(!urunEslesme['Kavanozluk No.2'] && program['Salatalık No.2']){
     urunEslesme['Kavanozluk No.2']='Salatalık No.2';
+  }
+  if(!urunEslesme['Kelek (Kavanozluk)'] && program['Kelek']){
+    urunEslesme['Kelek (Kavanozluk)']='Kelek';
+  }
+  /* eski sürümden kalan hatalı ad varsa temizle */
+  if(urunEslesme['Kavanozluk Kelek']){
+    delete urunEslesme['Kavanozluk Kelek'];
+    tanklar.forEach(t=>{ if(t.urun==='Kavanozluk Kelek') t.urun='Kelek (Kavanozluk)'; });
   }
   /* eski sürümden gelen ürün adlarını eşle */
   const esle={'Salatalık No.1':'Salatalık No.1'};
