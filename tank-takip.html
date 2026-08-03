@@ -387,7 +387,8 @@ textarea{min-height:110px;resize:vertical;font-family:ui-monospace,monospace;fon
 const FIREBASE_URL = 'https://tank-takip-default-rtdb.firebaseio.com';
 const K_HEDEF='tanktakip:urunHedef';
 const K_URUNES='tanktakip:urunEslesme';
-const SURUM='02.08.2026 08:49';
+const K_YEDEK='tanktakip:yedekTank';
+const SURUM='03.08.2026 04:58';
 let urunHedef={};
 const K_PERSONEL='tanktakip:personel', K_AD_KILIT='tanktakip:cihazKilit';
 const K_TANK='tanktakip:tanklar', K_PROG='tanktakip:programv2', K_IS='tanktakip:isemri', K_VERI='tanktakip:veriYuklendi', K_DEV='tanktakip:devirdaimSure';
@@ -459,6 +460,27 @@ async function progKaydet(){
   const ok=await fbSet(K_PROG, nesneKodla(program));
   try{ localStorage.setItem(K_PROG, JSON.stringify(program)); }catch(e){}
   return ok;
+}
+/* Günde bir kez tank listesinin anlık kopyasını buluta yaz */
+async function gunlukYedekAl(){
+  if(!FIREBASE_URL || !tanklar.length) return;
+  try{
+    const y=await fbGet(K_YEDEK);
+    const bug=bugunISO();
+    if(y && y.tarih===bug) return;                 // bugün alınmış
+    if(y && Array.isArray(y.tanklar) && y.tanklar.length > tanklar.length)
+      return;                                      // eldeki liste eksikse üstüne yazma
+    await fbSet(K_YEDEK,{tarih:bug, sayi:tanklar.length, tanklar});
+  }catch(e){}
+}
+/* Yedekte olup şu an olmayan tanklar */
+async function kayipTanklar(){
+  const y=await fbGet(K_YEDEK);
+  if(!y || !Array.isArray(y.tanklar)) return {yedek:null, eksik:[]};
+  const varOlan=new Set(tanklar.map(t=>t.id));
+  const kodVar=new Set(tanklar.map(t=>kodNormal(t.kod||'')));
+  const eksik=y.tanklar.filter(t=>!varOlan.has(t.id) && !kodVar.has(kodNormal(t.kod||'')));
+  return {yedek:y, eksik};
 }
 async function eslesmeKaydet(){
   const ok=await fbSet(K_URUNES, nesneKodla(urunEslesme));
@@ -1709,6 +1731,29 @@ function cizProgram(){
   }
   document.getElementById('btnKilit').onclick=yoneticiGirisi;
   const bs=document.getElementById('btnSenk'); if(bs) bs.onclick=simdiSenkronEt;
+  const kb=document.getElementById('kayipBul');
+  if(kb) kb.onclick=async()=>{
+    const alan=document.getElementById('kayipSonuc');
+    alan.innerHTML='<p class="hint">Kontrol ediliyor…</p>';
+    const {yedek,eksik}=await kayipTanklar();
+    if(!yedek){ alan.innerHTML='<p class="hint">Henüz yedek yok. Yarın tekrar bak.</p>'; return; }
+    if(!eksik.length){
+      alan.innerHTML='<p class="hint" style="color:var(--yesil)">✓ Kayıp tank yok. Yedek: '+kisaTarih(yedek.tarih)+' ('+yedek.sayi+' tank) · şu an '+tanklar.length+' tank.</p>';
+      return;
+    }
+    alan.innerHTML='<p class="hint" style="color:var(--alarm)"><b>'+eksik.length+' tank listede yok</b> (yedek: '+kisaTarih(yedek.tarih)+')</p>'
+      + eksik.slice(0,25).map(t=>`<div class="log"><span class="d">${t.kod}</span><span class="v">${t.urun||'—'}${t.kapasite?' · '+t.kapasite:''}${t.baslangic?' · '+kisaTarih(t.baslangic):''}</span></div>`).join('')
+      + (eksik.length>25?`<p class="hint">… ve ${eksik.length-25} tank daha</p>`:'')
+      + '<button class="btn" id="kayipGeri" style="margin-top:10px">'+eksik.length+' Tankı Geri Getir</button>';
+    document.getElementById('kayipGeri').onclick=async()=>{
+      const ok=await onayDialog('Tankları Geri Getir',
+        eksik.length+' tank listeye eklenecek.\nMevcut tanklara ve kayıtlara dokunulmaz.','Geri Getir');
+      if(!ok) return;
+      eksik.forEach(t=>{ t.kod=kodDuzelt(t.kod); tanklar.push(t); });
+      await sSet(K_TANK,tanklar);
+      ciz(); toast(eksik.length+' tank geri getirildi');
+    };
+  };
   const zg=document.getElementById('zorlaGuncelle');
   if(zg) zg.onclick=async()=>{
     const ok=await onayDialog('Güncellemeyi Zorla',
@@ -1811,6 +1856,12 @@ function cizProgram(){
   ${Object.entries(urunEslesme).map(([u,k])=>`
     <div class="log"><span class="d">↳</span><span class="v"><b>${u}</b> → ${k}
       ${yonetici?`<button class="icon" data-esKaldir="${u}" style="margin-left:8px;padding:4px 9px;font-size:11px">Kaldır</button>`:''}</span></div>`).join('')}`:''}
+  ${yonetici?`<div class="sec">Kayıp Tank Kurtarma</div>
+  <div class="grafKutu">
+    <p class="hint" style="margin:0">Tank listesinin günlük yedeği buluta alınır. Bir tank kaybolduysa buradan geri getirebilirsin.</p>
+    <button class="btn ghost" id="kayipBul" style="margin-top:10px">Kayıp Tank Var mı? Kontrol Et</button>
+    <div id="kayipSonuc"></div>
+  </div>`:''}
   <div class="sec">Uygulama Sürümü</div>
   <div class="grafKutu">
     <p class="hint" style="margin:0">Yüklü sürüm: <b>${SURUM}</b></p>
@@ -3301,6 +3352,7 @@ function yedek(){
   const qsTank=new URLSearchParams(location.search).get('tank');
   if(qsTank){ cizTankIsEmri(kodDuzelt(qsTank)); }
   else{ ciz(); }
+  gunlukYedekAl();
   canliSenkronBaslat();
 })();
 </script>
