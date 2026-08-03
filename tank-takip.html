@@ -388,7 +388,7 @@ const FIREBASE_URL = 'https://tank-takip-default-rtdb.firebaseio.com';
 const K_HEDEF='tanktakip:urunHedef';
 const K_URUNES='tanktakip:urunEslesme';
 const K_YEDEK='tanktakip:yedekTank';
-const SURUM='03.08.2026 17:00';
+const SURUM='03.08.2026 17:15';
 let urunHedef={};
 const K_PERSONEL='tanktakip:personel', K_AD_KILIT='tanktakip:cihazKilit';
 const K_TANK='tanktakip:tanklar', K_PROG='tanktakip:programv2', K_IS='tanktakip:isemri', K_VERI='tanktakip:veriYuklendi', K_DEV='tanktakip:devirdaimSure';
@@ -2834,7 +2834,26 @@ function excelOnizle(p, satirlar){
       <div class="dkart"><span>Dolu (güncellenecek)</span><b>${guncel.length}</b></div>
       <div class="dkart"><span>Boş tanka dolum</span><b>${yenidenDolum.length}</b></div>
     </div>
-    ${guncel.length?`<div class="sec">Bu tanklar DOLU</div>
+    ${(()=>{
+      const kgSay=v=>{ const s=String(v||'').replace(/[^0-9]/g,''); return s?+s:null; };
+      const farkli=[];
+      guncel.forEach(x=>{
+        const f=[];
+        if(x.k.urun && x.k.urun!==x.t.urun) f.push({a:'Ürün', e:x.t.urun||'—', y:x.k.urun});
+        if(x.k.kg && kgSay(x.t.kapasite)!==x.k.kg) f.push({a:'Miktar', e:(kgSay(x.t.kapasite)||'—')+' kg', y:x.k.kg+' kg'});
+        if(x.k.tarih && x.k.tarih!==x.t.baslangic) f.push({a:'Dolum tarihi', e:kisaTarih(x.t.baslangic), y:kisaTarih(x.k.tarih)});
+        if(x.k.hedef && +x.k.hedef!==+x.t.hedefGun) f.push({a:'Hedef gün', e:x.t.hedefGun, y:x.k.hedef});
+        if(f.length) farkli.push({t:x.t, f});
+      });
+      const ayni=guncel.length-farkli.length;
+      return `<div class="sec">Mevcut tanklarda değişiklik</div>
+      <p class="hint">${ayni} tankta <b>değişiklik yok</b>${farkli.length?`, <b style="color:var(--amber)">${farkli.length} tankta</b> şunlar değişecek:`:'.'}</p>
+      ${farkli.slice(0,40).map(x=>`<div class="log"><span class="d">${x.t.kod}</span><span class="v">
+        ${x.f.map(o=>`${o.a}: <b>${o.e}</b> → <b style="color:var(--amber)">${o.y}</b>`).join('<br>')}</span></div>`).join('')}
+      ${farkli.length>40?`<p class="hint">… ve ${farkli.length-40} tank daha</p>`:''}
+      <p class="hint">Ölçümler, kimyasallar ve onay kayıtları her durumda korunur.</p>`;
+    })()}
+    ${false?`<div class="sec">Bu tanklar DOLU</div>
       <p class="hint">Ölçüm ve kimyasal geçmişleri korunacak, sadece ürün/kg bilgisi güncellenecek.</p>
       ${guncel.slice(0,25).map(x=>`<div class="log"><span class="d">${x.k.kod}</span><span class="v">${tankOzetMetni(x.t)}<br><span class="n">→ ${x.k.urun||'—'}${x.k.kg?', '+x.k.kg+' kg':''}</span></span></div>`).join('')}
       ${guncel.length>25?`<p class="hint">… ve ${guncel.length-25} tank daha</p>`:''}`:''}
