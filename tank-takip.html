@@ -388,7 +388,7 @@ const FIREBASE_URL = 'https://tank-takip-default-rtdb.firebaseio.com';
 const K_HEDEF='tanktakip:urunHedef';
 const K_URUNES='tanktakip:urunEslesme';
 const K_YEDEK='tanktakip:yedekTank';
-const SURUM='03.08.2026 10:23';
+const SURUM='03.08.2026 17:00';
 let urunHedef={};
 const K_PERSONEL='tanktakip:personel', K_AD_KILIT='tanktakip:cihazKilit';
 const K_TANK='tanktakip:tanklar', K_PROG='tanktakip:programv2', K_IS='tanktakip:isemri', K_VERI='tanktakip:veriYuklendi', K_DEV='tanktakip:devirdaimSure';
@@ -2716,6 +2716,13 @@ function satirlariTanka(satirlar){
     if(h.kod!==undefined && sayac>=2){ bas=i; harita=h; break; }
   }
   if(bas<0) return {kayitlar:[], hata:'Başlık satırı bulunamadı. Sütunlarda "Hücre Kodu"/"Tank", "Stok Adı"/"Ürün" gibi başlıklar olmalı.'};
+  /* ERP'de "Seri Bakiye" ayrı sütun: negatifse o satır bir ÇIKIŞ hareketidir,
+     tarihi dolum tarihi değildir */
+  let iSeriBak=-1;
+  satirlar[bas].forEach((h,j)=>{
+    const s=String(h||'').toLocaleLowerCase('tr').replace(/\s+/g,'');
+    if(iSeriBak<0 && /seribakiye/.test(s)) iSeriBak=j;
+  });
   const kayitlar=[];
   let sonUrunHam='';   // ERP: ürün adı yalnız grubun ilk satırında yazar
   for(let i=bas+1;i<satirlar.length;i++){
@@ -2736,7 +2743,15 @@ function satirlariTanka(satirlar){
     const kgHam=harita.kg!==undefined? String(r[harita.kg]||'').replace(/[^\d]/g,'') : '';
     const tarih=harita.tarih!==undefined? tarihCevir(r[harita.tarih]) : null;
     const hedef=harita.hedef!==undefined? parseInt(String(r[harita.hedef]).replace(/[^\d]/g,''),10) : null;
-    kayitlar.push({kod, urun, kg:kgHam?+kgHam:null, tarih, hedef:(hedef&&hedef>0&&hedef<200)?hedef:null});
+    let cikisHareketi=false;
+    if(iSeriBak>=0){
+      const sb=parseFloat(String(r[iSeriBak]||'').replace(/\./g,'').replace(',','.'));
+      if(!isNaN(sb) && sb<0) cikisHareketi=true;
+    }
+    kayitlar.push({kod, urun, kg:kgHam?+kgHam:null,
+      tarih: cikisHareketi ? null : tarih,     // çıkış satırının tarihi dolum tarihi değil
+      hedef:(hedef&&hedef>0&&hedef<200)?hedef:null,
+      supheli: cikisHareketi ? ('çıkış hareketi ('+String(r[iSeriBak])+' kg) — tarih alınmadı') : null});
   }
   return {kayitlar, hata:kayitlar.length?null:'Geçerli tank satırı bulunamadı'};
 }
@@ -2835,6 +2850,12 @@ function excelOnizle(p, satirlar){
       return (programsiz.length?`<div class="sec">Programı olmayan ürünler</div>
         <p class="hint">Bu ürünler için bakım programı tanımlı değil, tankları İş Emri'nde görev üretmez:<br><b>${programsiz.join(', ')}</b><br>Program sekmesinden ekleyebilirsin.</p>`:'')
         + (eski.length?`<p class="hint">ℹ ${eski.length} tankın dolum tarihi 90 günden eski (en eskisi ${eski.map(k=>k.tarih).sort()[0]}). Bunlar listede "süre geçti" görünecek.</p>`:'');
+    })()}
+    ${(()=>{
+      const sup=kayitlar.filter(k=>k.supheli);
+      return sup.length?`<div class="sec">Kontrol edilmeli</div>
+        <p class="hint">Bu satırlar ERP'de <b>çıkış hareketi</b> içeriyor; dolum tarihleri alınmadı, sistemdeki tarih korunacak. Kilo bilgisini elle doğrula:</p>
+        ${sup.map(k=>`<div class="log"><span class="d">${k.kod}</span><span class="v">${k.urun||'—'} · dosyadaki kalan: <b>${k.kg||'—'} kg</b><span class="n">${k.supheli}</span></span></div>`).join('')}`:'';
     })()}
     <p class="hint">⚠ Dosyada olmayan tanklara <b>dokunulmaz</b>, hiçbir kayıt silinmez.</p>
     <button class="btn" id="ex_uygula">${kayitlar.length} satırı uygula</button>
