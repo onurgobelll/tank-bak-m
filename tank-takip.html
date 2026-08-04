@@ -188,6 +188,7 @@ input,select,textarea{width:100%;background:var(--surface);border:1.5px solid va
   font-family:var(--body);transition:border-color .15s,box-shadow .15s}
 input:focus,select:focus,textarea:focus{outline:none;border-color:#15803D;box-shadow:0 0 0 3px rgba(21,128,61,.13)}
 textarea{min-height:110px;resize:vertical;font-family:ui-monospace,monospace;font-size:13px}
+#ndIn{font-family:var(--body);font-size:16px;min-height:120px;line-height:1.45}
 .two{display:flex;gap:10px}.two>div{flex:1;min-width:0}
 .btn{width:100%;border:none;border-radius:14px;padding:15px;margin-top:16px;font-family:var(--body);font-size:15.5px;
   font-weight:600;letter-spacing:.01em;background:#15803D;color:#fff;box-shadow:var(--golge-mavi);
@@ -398,7 +399,7 @@ const FIREBASE_URL = 'https://tank-takip-default-rtdb.firebaseio.com';
 const K_HEDEF='tanktakip:urunHedef';
 const K_URUNES='tanktakip:urunEslesme';
 const K_YEDEK='tanktakip:yedekTank';
-const SURUM='04.08.2026 05:41';
+const SURUM='04.08.2026 11:12';
 let urunHedef={};
 const K_PERSONEL='tanktakip:personel', K_AD_KILIT='tanktakip:cihazKilit';
 const K_TANK='tanktakip:tanklar', K_PROG='tanktakip:programv2', K_IS='tanktakip:isemri', K_VERI='tanktakip:veriYuklendi', K_DEV='tanktakip:devirdaimSure';
@@ -2539,6 +2540,9 @@ function detay(id){
     detay(id);
     toast(v? t.kod+' devirdaim: '+v+' saat' : t.kod+' seri varsayılanına döndü');
   };
+  const nEk=q('#notEkleBtn'); if(nEk) nEk.onclick=()=>notEkle(id);
+  p.querySelectorAll('[data-notduz]').forEach(b=>b.onclick=()=>notDuzenleFn(id,b.dataset.notduz));
+  p.querySelectorAll('[data-notsil]').forEach(b=>b.onclick=()=>notSilFn(id,b.dataset.notsil));
   q('#duzenle').onclick=()=>form(id);
   q('#sil').onclick=async()=>{
     if(!confirm(t.kod+' ve tüm ölçümleri silinsin mi?')) return;
