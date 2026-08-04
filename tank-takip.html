@@ -399,7 +399,7 @@ const FIREBASE_URL = 'https://tank-takip-default-rtdb.firebaseio.com';
 const K_HEDEF='tanktakip:urunHedef';
 const K_URUNES='tanktakip:urunEslesme';
 const K_YEDEK='tanktakip:yedekTank';
-const SURUM='04.08.2026 11:12';
+const SURUM='04.08.2026 11:40';
 let urunHedef={};
 const K_PERSONEL='tanktakip:personel', K_AD_KILIT='tanktakip:cihazKilit';
 const K_TANK='tanktakip:tanklar', K_PROG='tanktakip:programv2', K_IS='tanktakip:isemri', K_VERI='tanktakip:veriYuklendi', K_DEV='tanktakip:devirdaimSure';
@@ -675,9 +675,10 @@ function canliSenkronBaslat(){
     const p = pd.ok ? pd.data : undefined;
     if(dv!==undefined) devirdaimSure=dv;
     if(pe!==undefined) personel=pe;
-    const uh=await fbGet(K_HEDEF); if(uh!==undefined) urunHedef=nesneCoz(uh)||{};
-    const ue=await fbGet(K_URUNES);
     let degisti=false;
+    const uh=await fbGet(K_HEDEF);
+    if(uh!==undefined){ const uhC=nesneCoz(uh)||{}; if(JSON.stringify(uhC)!==JSON.stringify(urunHedef)){ urunHedef=uhC; degisti=true; } }
+    const ue=await fbGet(K_URUNES);
     if(ue!==undefined){ const ueC=eslesmeCoz(ue); if(JSON.stringify(ueC)!==JSON.stringify(urunEslesme)){ urunEslesme=ueC; degisti=true; } }
     if(t!==undefined){
       t.forEach(x=>{ if(x.kod){ const y=kodDuzelt(x.kod); if(y!==x.kod) x.kod=y; } });
@@ -867,6 +868,7 @@ function notListe(t){
     if(t.notlar && String(t.notlar).trim()){
       t.notlar2.push({id:'n0', m:String(t.notlar).trim(), k:'', t:t.baslangic||bugunISO(), s:''});
     }
+    delete t.notlar;   // eski tek satırlık alanı bırakma
   }
   return t.notlar2;
 }
@@ -2255,7 +2257,7 @@ function form(id){
     </div>
     <label>Devirdaim süresi (bu tanka özel)</label>
     <input id="f_dev" value="${t&&t.devSure?t.devSure:''}" placeholder="Boş = seri varsayılanı${t?` (${devirdaimSure[seri(t)]||'—'})`:''}">
-    <label>Not</label><input id="f_not" value="${t?(t.notlar||''):''}" placeholder="Parti no, tedarikçi, tuz oranı…">
+    ${t?'<p class="hint">Notlar için tank detayındaki <b>Notlar</b> bölümünü kullan — birden fazla not ekleyebilir, sonradan düzenleyebilirsin.</p>':''}
     <button class="btn" id="f_kaydet">Kaydet</button>
     <p class="hint">1. gün = dolum günü. İş emri, ürünün programına göre otomatik çıkar.</p>
   `);
@@ -2282,8 +2284,7 @@ function form(id){
       urun:q('#f_urun').value,
       baslangic:q('#f_bas').value||bugunISO(),
       hedefGun:+q('#f_hedef').value||21,
-      devSure:q('#f_dev').value.trim(),
-      notlar:q('#f_not').value.trim()
+      devSure:q('#f_dev').value.trim()
     };
     if(mod==='toplu'){
       const sr=q('#b_seri').value.trim().toUpperCase();
@@ -2941,10 +2942,6 @@ function excelOnizle(p, satirlar){
       ${farkli.length>40?`<p class="hint">… ve ${farkli.length-40} tank daha</p>`:''}
       <p class="hint">Ölçümler, kimyasallar ve onay kayıtları her durumda korunur.</p>`;
     })()}
-    ${false?`<div class="sec">Bu tanklar DOLU</div>
-      <p class="hint">Ölçüm ve kimyasal geçmişleri korunacak, sadece ürün/kg bilgisi güncellenecek.</p>
-      ${guncel.slice(0,25).map(x=>`<div class="log"><span class="d">${x.k.kod}</span><span class="v">${tankOzetMetni(x.t)}<br><span class="n">→ ${x.k.urun||'—'}${x.k.kg?', '+x.k.kg+' kg':''}</span></span></div>`).join('')}
-      ${guncel.length>25?`<p class="hint">… ve ${guncel.length-25} tank daha</p>`:''}`:''}
     ${yeni.length?`<div class="sec">Yeni eklenecek</div>
       ${yeni.slice(0,25).map(x=>`<div class="log"><span class="d">${x.k.kod}</span><span class="v">${x.k.urun||'—'}${x.k.kg?' · '+x.k.kg+' kg':''}${x.k.tarih?' · '+x.k.tarih:''}</span></div>`).join('')}
       ${yeni.length>25?`<p class="hint">… ve ${yeni.length-25} tank daha</p>`:''}`:''}
