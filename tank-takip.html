@@ -86,6 +86,16 @@ main{padding:8px 16px 0}
 .gorev.gecikmis .gk{color:#9A3412}
 .gecRozet{color:#DC2626;font-weight:700}
 .gecSay{color:#DC2626;margin-left:3px;font-size:.85em}
+.notKart{background:#FFFBEB;border:1px solid #FDE68A;border-radius:12px;padding:11px 13px;margin-bottom:8px}
+.notMetin{font-size:14px;color:var(--ink);line-height:1.45;white-space:pre-wrap;word-break:break-word}
+.notAlt{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:8px;flex-wrap:wrap}
+.notAlt>span:first-child{font-size:11px;color:#92400E}
+.notBtn{display:flex;gap:6px}
+.notD,.notS{border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:5px 11px;font-size:11.5px;font-weight:600}
+.notD{color:#15803D}
+.notS{color:var(--alarm)}
+.notD:active,.notS:active{transform:scale(.95)}
+.pill.notPill{background:#FEF3C7;color:#92400E;border-color:#FDE68A;font-weight:700}
 .gecUyari{display:flex;align-items:center;gap:11px;width:100%;text-align:left;
   background:#FEF2F2;border:1.5px solid #FCA5A5;border-radius:14px;padding:12px 14px;margin-bottom:11px;
   box-shadow:0 2px 10px rgba(220,38,38,.09);transition:transform .12s}
@@ -388,7 +398,7 @@ const FIREBASE_URL = 'https://tank-takip-default-rtdb.firebaseio.com';
 const K_HEDEF='tanktakip:urunHedef';
 const K_URUNES='tanktakip:urunEslesme';
 const K_YEDEK='tanktakip:yedekTank';
-const SURUM='03.08.2026 17:15';
+const SURUM='04.08.2026 05:41';
 let urunHedef={};
 const K_PERSONEL='tanktakip:personel', K_AD_KILIT='tanktakip:cihazKilit';
 const K_TANK='tanktakip:tanklar', K_PROG='tanktakip:programv2', K_IS='tanktakip:isemri', K_VERI='tanktakip:veriYuklendi', K_DEV='tanktakip:devirdaimSure';
@@ -824,6 +834,66 @@ function girdiDialog(baslik, detay, placeholder, tip){
     inp.onkeydown=e=>{ if(e.key==='Enter') bitir(inp.value.trim()||null); };
     ov.onclick=e=>{ if(e.target===ov) bitir(null); };
   });
+}
+function notDialog(baslik, mevcut){
+  return new Promise(resolve=>{
+    const ov=document.createElement('div');
+    ov.className='onayOverlay';
+    ov.innerHTML=`
+      <div class="onayKutu">
+        <p class="ob">${baslik}</p>
+        <textarea id="ndIn" rows="4" placeholder="Örn: Üst kısımda köpürme var, 2 gün sonra tekrar bak"></textarea>
+        <div class="two" style="margin-top:14px">
+          <button class="btn ghost" id="ndIptal">İptal</button>
+          <button class="btn" id="ndTamam">Kaydet</button>
+        </div>
+      </div>`;
+    document.body.appendChild(ov);
+    const inp=ov.querySelector('#ndIn');
+    inp.value=mevcut||'';
+    setTimeout(()=>{ inp.focus(); inp.setSelectionRange(inp.value.length,inp.value.length); },60);
+    const bitir=v=>{ ov.remove(); resolve(v); };
+    ov.querySelector('#ndIptal').onclick=()=>bitir(null);
+    ov.querySelector('#ndTamam').onclick=()=>bitir(inp.value.trim());
+    ov.onclick=e=>{ if(e.target===ov) bitir(null); };
+  });
+}
+/* ---- TANK NOTLARI ---- */
+/* Eski tek satırlık t.notlar varsa listeye taşı */
+function notListe(t){
+  if(!Array.isArray(t.notlar2)){
+    t.notlar2=[];
+    if(t.notlar && String(t.notlar).trim()){
+      t.notlar2.push({id:'n0', m:String(t.notlar).trim(), k:'', t:t.baslangic||bugunISO(), s:''});
+    }
+  }
+  return t.notlar2;
+}
+function notSayi(t){ return (Array.isArray(t.notlar2)?t.notlar2:(t.notlar&&String(t.notlar).trim()?[1]:[])).length; }
+async function notEkle(id){
+  const t=tanklar.find(x=>x.id===id); if(!t) return;
+  const m=await notDialog(t.kod+' — Yeni Not','');
+  if(m===null || !m) return;
+  notListe(t).unshift({id:'n'+Date.now(), m, k:kullaniciAdi()||'—', t:bugunISO(), s:saatSimdi()});
+  await tankYaz(); kapat(); detay(id); toast('Not eklendi');
+}
+async function notDuzenleFn(id, nid){
+  const t=tanklar.find(x=>x.id===id); if(!t) return;
+  const n=notListe(t).find(x=>x.id===nid); if(!n) return;
+  const m=await notDialog(t.kod+' — Notu Düzenle', n.m);
+  if(m===null) return;
+  if(!m){ toast('Not boş bırakılamaz'); return; }
+  n.m=m; n.duz={k:kullaniciAdi()||'—', t:bugunISO(), s:saatSimdi()};
+  await tankYaz(); kapat(); detay(id); toast('Not güncellendi');
+}
+async function notSilFn(id, nid){
+  const t=tanklar.find(x=>x.id===id); if(!t) return;
+  const liste=notListe(t);
+  const n=liste.find(x=>x.id===nid); if(!n) return;
+  const ok=await onayDialog('Notu Sil', '"'+n.m.slice(0,80)+(n.m.length>80?'…':'')+'"\n\nBu not silinecek.','Sil');
+  if(!ok) return;
+  t.notlar2=liste.filter(x=>x.id!==nid);
+  await tankYaz(); kapat(); detay(id); toast('Not silindi');
 }
 const KIMYASALLAR=['Meta','Sorbat','Benzoat','Riboflavin'];
 function onayDialog(baslik, detay, evetMetin){
@@ -1372,6 +1442,7 @@ function tankListesiCiz(){
           ${t.erkenBitiren?`<span class="pill erkenPill">⬇ ERKEN ${t.hedefGun}G</span>`:''}
           <span class="pill ${SINIF[d]}">${ETIKET[d]}</span>
           <span class="pill">${g}/${t.hedefGun} gün</span>
+          ${notSayi(t)?`<span class="pill notPill">📝 ${notSayi(t)}</span>`:''}
         </div>
         ${son?`<div class="olcumGrid">
           <div><span>pH</span><b class="${phKritik?'uyari':''}">${son.ph||'—'}</b></div>
@@ -2305,7 +2376,20 @@ function detay(id){
       <div><span>${kalan>=0?'Kalan':'Aşım'}</span><b style="font-size:16px;line-height:1.3;padding-top:4px;display:block">${kalanMetin(t)}</b></div>
       <div><span>Dolum</span><b>${kisaTarih(t.baslangic)}</b></div>
     </div>
-    ${t.notlar?`<p class="hint">${t.notlar}</p>`:''}
+    <div class="sec">Notlar${notListe(t).length?` <small style="font-weight:400;color:var(--muted)">(${notListe(t).length})</small>`:''}</div>
+    ${notListe(t).length
+      ? notListe(t).map(n=>`<div class="notKart">
+          <div class="notMetin">${n.m.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/\n/g,'<br>')}</div>
+          <div class="notAlt">
+            <span>${n.k||'—'}${n.t?' · '+kisaTarih(n.t):''}${n.s?' · '+n.s:''}${n.duz?` · <i>düzenlendi ${kisaTarih(n.duz.t)}</i>`:''}</span>
+            <span class="notBtn">
+              <button class="notD" data-notduz="${n.id}">Düzenle</button>
+              <button class="notS" data-notsil="${n.id}">Sil</button>
+            </span>
+          </div>
+        </div>`).join('')
+      : '<p class="hint">Bu tank için not yok.</p>'}
+    <button class="btn ghost" id="notEkleBtn">+ Not Ekle</button>
     ${t.bosaltildi?'':(yonetici?`
       <h3>Ölçüm ekle</h3>
       <div class="two">
@@ -3306,6 +3390,7 @@ function cizTankIsEmri(kod){
         <div class="meta">
           <span class="pill ${SINIF[d]}">${ETIKET[d]}</span>
           <span class="pill">${g}/${t.hedefGun} gün</span>
+          ${notSayi(t)?`<span class="pill notPill">📝 ${notSayi(t)}</span>`:''}
           <span class="pill">Dolum ${kisaTarih(t.baslangic)}</span>
           ${t.devSure?`<span class="pill soon">Devirdaim özel: ${t.devSure} sa</span>`:''}
         </div>
@@ -3370,6 +3455,17 @@ function cizTankIsEmri(kod){
         ${o.not?`<span class="n">${o.not}</span>`:''}</span></div>`).join('')}
     </div>`:''}
     <div class="grup">
+      <h3>Notlar<small>${notListe(t).length||'yok'}</small></h3>
+      ${notListe(t).length? notListe(t).slice(0,5).map(n=>`<div class="notKart">
+          <div class="notMetin">${n.m.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/\n/g,'<br>')}</div>
+          <div class="notAlt"><span>${n.k||'—'}${n.t?' · '+kisaTarih(n.t):''}${n.s?' · '+n.s:''}</span>
+            <span class="notBtn"><button class="notD" data-qnotduz="${n.id}">Düzenle</button>
+            <button class="notS" data-qnotsil="${n.id}">Sil</button></span></div>
+        </div>`).join('') : '<p class="hint">Not yok.</p>'}
+      ${notListe(t).length>5?`<p class="hint">… ve ${notListe(t).length-5} not daha (Tanklar sekmesinde tamamı)</p>`:''}
+      <button class="btn ghost" id="qrNotEkle">+ Not Ekle</button>
+    </div>
+    <div class="grup">
       <h3>Kimyasal / Ek İşlem<small>program dışı</small></h3>
       <div class="tags kimTags">
         ${KIMYASALLAR.map(kim=>`<button class="tag kimBtn" data-kim="${kim}">+ ${kim}</button>`).join('')}
@@ -3411,6 +3507,30 @@ function cizTankIsEmri(kod){
       if(ym===''){ t.kimyasallar.splice(i,1); toast('Kayıt silindi'); }
       else { kay.miktar=ym; kay.k=kullaniciAdi(); kay.s=saatSimdi(); toast('Güncellendi'); }
       await tankYaz(); cizTankIsEmri(kod); return;
+    }
+    if(ev.target.closest('#qrNotEkle')){
+      const m=await notDialog(t.kod+' — Yeni Not','');
+      if(m===null||!m) return;
+      notListe(t).unshift({id:'n'+Date.now(), m, k:kullaniciAdi()||'—', t:bugunISO(), s:saatSimdi()});
+      await tankYaz(); cizTankIsEmri(kod); toast('Not eklendi'); return;
+    }
+    const qnd=ev.target.closest('[data-qnotduz]');
+    if(qnd){
+      const n=notListe(t).find(x=>x.id===qnd.dataset.qnotduz); if(!n) return;
+      const m=await notDialog(t.kod+' — Notu Düzenle', n.m);
+      if(m===null) return;
+      if(!m){ toast('Not boş bırakılamaz'); return; }
+      n.m=m; n.duz={k:kullaniciAdi()||'—', t:bugunISO(), s:saatSimdi()};
+      await tankYaz(); cizTankIsEmri(kod); toast('Not güncellendi'); return;
+    }
+    const qns=ev.target.closest('[data-qnotsil]');
+    if(qns){
+      const nid=qns.dataset.qnotsil;
+      const n=notListe(t).find(x=>x.id===nid); if(!n) return;
+      const ok=await onayDialog('Notu Sil','"'+n.m.slice(0,80)+(n.m.length>80?'…':'')+'"\n\nBu not silinecek.','Sil');
+      if(!ok) return;
+      t.notlar2=notListe(t).filter(x=>x.id!==nid);
+      await tankYaz(); cizTankIsEmri(kod); toast('Not silindi'); return;
     }
     const kb=ev.target.closest('.kimBtn');
     if(kb){
@@ -3479,7 +3599,8 @@ function csv(){
   const b=['Tank;Kapasite;Urun;Dolum;Gun;HedefGun;Durum;SonPH;SonTuz;Not'];
   tanklar.forEach(t=>{
     const s=(t.olcumler||[])[0]||{};
-    b.push([t.kod,t.kapasite||'',t.urun||'',t.baslangic,gun(t),t.hedefGun,ETIKET[durum(t)],s.ph||'',s.tuz||'',(t.notlar||'').replace(/;/g,',')].join(';'));
+    const notMetni=notListe(t).map(n=>n.m).join(' // ').replace(/;/g,',').replace(/[\r\n]+/g,' ');
+    b.push([t.kod,t.kapasite||'',t.urun||'',t.baslangic,gun(t),t.hedefGun,ETIKET[durum(t)],s.ph||'',s.tuz||'',notMetni].join(';'));
   });
   return b.join('\n');
 }
