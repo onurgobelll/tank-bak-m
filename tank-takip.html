@@ -403,7 +403,7 @@ const FIREBASE_URL = 'https://tank-takip-default-rtdb.firebaseio.com';
 const K_HEDEF='tanktakip:urunHedef';
 const K_URUNES='tanktakip:urunEslesme';
 const K_YEDEK='tanktakip:yedekTank';
-const SURUM='04.08.2026 17:41';
+const SURUM='06.08.2026 15:57';
 let urunHedef={};
 const K_PERSONEL='tanktakip:personel', K_AD_KILIT='tanktakip:cihazKilit';
 const K_TANK='tanktakip:tanklar', K_PROG='tanktakip:programv2', K_IS='tanktakip:isemri', K_VERI='tanktakip:veriYuklendi', K_DEV='tanktakip:devirdaimSure';
@@ -1056,6 +1056,8 @@ function ciz(){
 
 /* ---------- tanklar ---------- */
 function tankKg(t){
+  /* açık tankta gerçek stok = kalan miktar */
+  if(t.acik && !t.bosaltildi && t.acik.kalan!=null) return +t.acik.kalan||0;
   if(!t.kapasite) return 0;
   const m=t.kapasite.match(/([\d.,]+)\s*(kg|t)?/i);
   if(!m) return 0;
@@ -1429,15 +1431,7 @@ function urunOzeti(){
 }
 function toplamKg(){
   let kg=0;
-  tanklar.forEach(t=>{
-    if(t.bosaltildi||!t.kapasite) return;
-    const m=t.kapasite.match(/([\d.,]+)\s*(kg|t)?/i);
-    if(!m) return;
-    let v=+m[1].replace(/[.,](?=\d{3}\b)/g,'').replace(',','.');
-    if(isNaN(v)) return;
-    if(m[2]&&m[2].toLowerCase()==='t') v*=1000;
-    kg+=v;
-  });
+  tanklar.forEach(t=>{ if(!t.bosaltildi) kg+=tankKg(t); });
   return Math.round(kg);
 }
 function cizTanklar(){
@@ -1666,7 +1660,7 @@ function cizIsEmri(){
     </div>`:''}
     ${GOREV_SIRA.filter(k=>grup[k]).map(k=>`
       <div class="grup">
-        <h3>${k==='DEV'?'Devirdaim':GOREV[k]}<small>${grup[k].length} tank${k==='T'?' · '+grup[k].reduce((n,x)=>n+(x.tuzKg||0),0)+' kg':''}${(k==='DEV'||DEVIR_KODLARI.includes(k))?` <button class="cokluBtn" data-cg="${k}">${cokluGorev===k?'✕ Vazgeç':'☑ Çoklu'}</button>`:''}${yonetici?` <button class="tumuBtn" data-g="${k}">Tümü ✓</button>`:''}</small></h3>
+        <h3>${k==='DEV'?'Devirdaim':GOREV[k]}<small>${grup[k].length} tank${k==='T'?' · '+grup[k].reduce((n,x)=>n+(x.tuzKg||0),0)+' kg':''}<button class="cokluBtn" data-cg="${k}">${cokluGorev===k?'✕ Vazgeç':'☑ Çoklu'}</button>${yonetici?` <button class="tumuBtn" data-g="${k}">Tümü ✓</button>`:''}</small></h3>
         ${cokluGorev===k?(()=>{
           const acik=(grup[k]||[]).filter(x=>!done[x.t.id+':'+(x._kod||k)]);
           const seriler=[...new Set(acik.map(x=>seri(x.t)))].sort();
@@ -1682,7 +1676,7 @@ function cizIsEmri(){
               }).join('')}
             </div>
             <div class="cbAlt">
-              <span class="cbSay">${seciliSay} seçili</span>
+              <span class="cbSay">${seciliSay} seçili${k==='T'?' · '+(grup[k]||[]).filter(x=>cokluSecim.has(x.t.id+':'+(x._kod||k))).reduce((n,x)=>n+(x.tuzKg||0),0)+' kg':''}</span>
               <button class="cbOnay" data-cgonay="${k}">Onayla</button>
             </div>
           </div>`;
