@@ -411,7 +411,8 @@ const FIREBASE_URL = 'https://tank-takip-default-rtdb.firebaseio.com';
 const K_HEDEF='tanktakip:urunHedef';
 const K_URUNES='tanktakip:urunEslesme';
 const K_YEDEK='tanktakip:yedekTank';
-const SURUM='07.08.2026 04:18';
+const K_YEDEK_TARIH='tanktakip:yedekSonTarih';
+const SURUM='07.08.2026 18:30';
 let urunHedef={};
 const K_PERSONEL='tanktakip:personel', K_AD_KILIT='tanktakip:cihazKilit';
 const K_TANK='tanktakip:tanklar', K_PROG='tanktakip:programv2', K_IS='tanktakip:isemri', K_VERI='tanktakip:veriYuklendi', K_DEV='tanktakip:devirdaimSure';
@@ -495,8 +496,11 @@ async function gunlukYedekAl(){
   if(!FIREBASE_URL || !tanklar.length) return;
   if(tankKaynak!=='bulut') return;   // çevrimdışı/eksik kopyayla yedek alma
   try{
-    const y=await fbGet(K_YEDEK) || {};
     const bug=bugunISO();
+    /* hızlı kontrol: bugün yedek alınmışsa ağır geçmişi hiç indirme */
+    const sonTarih=await fbGet(K_YEDEK_TARIH);
+    if(sonTarih===bug) return;
+    const y=await fbGet(K_YEDEK) || {};
     const gecmis = Array.isArray(y.gecmis) ? y.gecmis : (y.tanklar?[{tarih:y.tarih,sayi:y.sayi,tanklar:y.tanklar}]:[]);
     if(gecmis.some(g=>g.tarih===bug)) return;      // bugün alınmış
     const sonuncu=gecmis[0];
@@ -504,6 +508,7 @@ async function gunlukYedekAl(){
     gecmis.unshift({tarih:bug, sayi:tanklar.length, tanklar:JSON.parse(JSON.stringify(tanklar))});
     while(gecmis.length>7) gecmis.pop();
     await fbSet(K_YEDEK,{gecmis});
+    await fbSet(K_YEDEK_TARIH,bug);
   }catch(e){}
 }
 function yedekListesi(y){
@@ -3786,12 +3791,16 @@ function yedek(){
     // varsayılanı yalnızca Firebase gerçekten boşsa yaz (bağlantı hatasında yazma!)
     if(progDurum.ok) await progKaydet();
   }
-  isemri=await sGet(K_IS,{});
-  veriYuklendi=!!(await sGet(K_VERI,false));
-  devirdaimSure=await sGet(K_DEV,{...DEV_VARSAYILAN});
-  personel=await sGet(K_PERSONEL,[]);
-  urunHedef=nesneCoz(await sGet(K_HEDEF,{}))||{};
-  urunEslesme=eslesmeCoz(await sGet(K_URUNES,{}));
+  const [_is,_veri,_dev,_pers,_hedef,_esles] = await Promise.all([
+    sGet(K_IS,{}), sGet(K_VERI,false), sGet(K_DEV,{...DEV_VARSAYILAN}),
+    sGet(K_PERSONEL,[]), sGet(K_HEDEF,{}), sGet(K_URUNES,{})
+  ]);
+  isemri=_is;
+  veriYuklendi=!!_veri;
+  devirdaimSure=_dev;
+  personel=_pers;
+  urunHedef=nesneCoz(_hedef)||{};
+  urunEslesme=eslesmeCoz(_esles);
   /* Kavanozluk No.2 varsayılan olarak Salatalık No.2 programına bağlı */
   if(!urunEslesme['Kavanozluk No.2'] && program['Salatalık No.2']){
     urunEslesme['Kavanozluk No.2']='Salatalık No.2';
