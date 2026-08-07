@@ -97,6 +97,14 @@ main{padding:8px 16px 0}
 .notD:active,.notS:active{transform:scale(.95)}
 .pill.notPill{background:#FEF3C7;color:#92400E;border-color:#FDE68A;font-weight:700}
 .pill.acikPill{background:#7C3AED;color:#fff;border-color:transparent;font-weight:700}
+.notTankKart{background:#FFFBEB;border:1px solid #FDE68A;border-radius:12px;padding:10px 12px;margin-bottom:8px;cursor:pointer}
+.notTankKart:active{transform:scale(.99)}
+.ntBas{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+.ntBas b{font-family:var(--cond);font-size:18px;letter-spacing:.04em;color:#92400E}
+.ntBas span{font-size:11.5px;color:#B45309;flex:1}
+.ntBas em{font-size:11.5px;color:#92400E;font-style:normal;font-weight:700}
+.ntNot{font-size:13px;color:var(--ink);line-height:1.4;margin-top:6px;padding-left:9px;border-left:2px solid #FDE68A}
+.ntNot span{display:block;font-size:10.5px;color:#B45309;margin-top:2px}
 .acikKart{background:#F5F3FF;border:1px solid #C4B5FD;border-radius:12px;padding:10px 12px;margin-bottom:7px}
 .acikKart b{font-family:var(--cond);font-size:18px;letter-spacing:.04em;color:#5B21B6}
 .acikKart span{display:block;font-size:11.5px;color:#6D28D9;margin-top:2px}
@@ -403,7 +411,7 @@ const FIREBASE_URL = 'https://tank-takip-default-rtdb.firebaseio.com';
 const K_HEDEF='tanktakip:urunHedef';
 const K_URUNES='tanktakip:urunEslesme';
 const K_YEDEK='tanktakip:yedekTank';
-const SURUM='06.08.2026 15:57';
+const SURUM='07.08.2026 04:18';
 let urunHedef={};
 const K_PERSONEL='tanktakip:personel', K_AD_KILIT='tanktakip:cihazKilit';
 const K_TANK='tanktakip:tanklar', K_PROG='tanktakip:programv2', K_IS='tanktakip:isemri', K_VERI='tanktakip:veriYuklendi', K_DEV='tanktakip:devirdaimSure';
@@ -1229,6 +1237,25 @@ function cizOzet(){
   const yanlisBos=yanlisBosaltilanlar();
   e.innerHTML=`
     ${(()=>{
+      const notlu=tanklar.filter(t=>notSayi(t)>0)
+        .sort((a,b)=>{
+          const sa=(notListe(a)[0]||{}).t||'', sb=(notListe(b)[0]||{}).t||'';
+          return sb.localeCompare(sa);
+        });
+      if(!notlu.length) return '';
+      const toplamNot=notlu.reduce((n,t)=>n+notSayi(t),0);
+      return `<div class="sec">📝 Notlu Tanklar<small style="font-weight:400;color:var(--muted)"> — ${notlu.length} tank · ${toplamNot} not</small></div>
+      ${notlu.slice(0,30).map(t=>`<div class="notTankKart" data-nottank="${t.id}">
+        <div class="ntBas"><b>${t.kod}</b>
+          <span>${t.urun||'—'}${t.bosaltildi?' · boşaltıldı':` · ${gun(t)}. gün`}${acikMi(t)?' · 🔓 açık':''}</span>
+          <em>${notSayi(t)} not ›</em></div>
+        ${notListe(t).slice(0,2).map(n=>`<div class="ntNot">${n.m.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/\n/g,' ').slice(0,110)}${n.m.length>110?'…':''}
+          <span>${n.k||'—'}${n.t?' · '+kisaTarih(n.t):''}</span></div>`).join('')}
+        ${notSayi(t)>2?`<div class="ntNot" style="opacity:.7">… ${notSayi(t)-2} not daha</div>`:''}
+      </div>`).join('')}
+      ${notlu.length>30?`<p class="hint">… ve ${notlu.length-30} tank daha (Tanklar → 📝 Notlu)</p>`:''}`;
+    })()}
+    ${(()=>{
       const ac=acikTanklar();
       if(!ac.length) return '';
       const grup={};
@@ -1382,6 +1409,7 @@ function cizOzet(){
       ${rapor.length>15?`<p class="hint">+${rapor.length-15} kayıt daha CSV'de</p>`:''}
       </div>`:'<p class="hint">Son 7 günde onaylanmış bakım kaydı yok.</p>'}
   `;
+  e.querySelectorAll('[data-nottank]').forEach(b=>b.onclick=()=>detay(b.dataset.nottank));
   if(document.getElementById('erkenGit')){
     document.getElementById('erkenGit').onclick=()=>{ gorunum='tanklar'; filtre='erken'; ciz(); };
   }
@@ -1435,19 +1463,20 @@ function toplamKg(){
   return Math.round(kg);
 }
 function cizTanklar(){
-  const say={hepsi:0,hazir:0,yakin:0,gecti:0,dip:0,temiz:0,erken:0,bugun:0,acik:0};
+  const say={hepsi:0,hazir:0,yakin:0,gecti:0,dip:0,temiz:0,erken:0,bugun:0,acik:0,notlu:0};
   tanklar.forEach(t=>{
     if(t.bosaltildi){ if(t.temizlendi) say.temiz++; else say.dip++; return;}
     say.hepsi++; const d=durum(t); if(say[d]!==undefined) say[d]++;
     if(t.erkenBitiren) say.erken++;
     if(acikMi(t)) say.acik++;
+    if(notSayi(t)) say.notlu++;
     if(d==='bugunKapanacak') say.bugun++;
   });
   const kgToplam=toplamKg();
   document.getElementById('hdr').innerHTML=`
     <div class="top"><h1>🧪 Tanklar</h1><button class="icon" id="btnOkut">Okut</button>${yonetici?'<button class="icon" id="btnQR">QR</button><button class="icon" id="btnHizli">Hızlı Ekle</button><button class="icon" id="btnExcel">📊 Excel</button>'+(veriYuklendi?'':'<button class="icon" id="btnVeri">Veri Yükle</button>')+'<button class="icon" id="btnYedek">Yedek</button>':''}<button class="icon" id="btnKilit">${yonetici?'🔓':'🔒'}</button></div>
     <input id="ara" placeholder="Tank ara: A-14, biber…" value="${arama}" autocomplete="off">
-    <div class="chips">${[['hepsi','Aktif'],['acik','🔓 Açık'],['erken','⬇ Erken'],['hazir','Hazır'],['bugun','📅 Bugün Kapanacak'],['yakin','Yaklaşan'],['gecti','Geçen'],['dip','🧽 Temizlenecek'],['temiz','✓ Temiz']]
+    <div class="chips">${[['hepsi','Aktif'],['notlu','📝 Notlu'],['acik','🔓 Açık'],['erken','⬇ Erken'],['hazir','Hazır'],['bugun','📅 Bugün Kapanacak'],['yakin','Yaklaşan'],['gecti','Geçen'],['dip','🧽 Temizlenecek'],['temiz','✓ Temiz']]
       .map(([k,ad])=>`<button class="chip" data-f="${k}" aria-pressed="${filtre===k}">${ad}<b>${say[k]||0}</b></button>`).join('')}`;
   document.getElementById('btnKilit').onclick=yoneticiGirisi;
   document.getElementById('btnOkut').onclick=qrOku;
@@ -1471,6 +1500,7 @@ function tankListesiCiz(){
     if(q && !((t.kod+' '+(t.urun||'')).toLocaleLowerCase('tr').includes(q))) return false;
     if(filtre==='dip') return !!t.bosaltildi && !t.temizlendi;
     if(filtre==='temiz') return !!t.bosaltildi && !!t.temizlendi;
+    if(filtre==='notlu') return notSayi(t)>0;
     if(t.bosaltildi) return false;
     if(filtre==='hepsi') return true;
     if(filtre==='acik') return acikMi(t);
