@@ -407,12 +407,48 @@ textarea{min-height:110px;resize:vertical;font-family:ui-monospace,monospace;fon
    PAYLAŞIMLI VERİ İÇİN: aşağıdaki FIREBASE_URL'e Firebase Realtime Database
    adresini yapıştır (örn: 'https://tank-takip-default-rtdb.firebaseio.com').
    Boş bırakılırsa uygulama sadece bu telefonda çalışır (eski davranış). */
-const FIREBASE_URL = 'https://tank-takip-default-rtdb.firebaseio.com';
+const FB_ADRESLER = [
+  'https://tank-takip-default-rtdb.firebaseio.com',
+  'https://tank-takip-default-rtdb.firebasedatabase.app',   // aynı veritabanı, farklı alan adı
+  'https://tank-takip-default-rtdb.us-central1.firebasedatabase.app'
+];
+let fbAdresIdx = 0;
+try{ const s=localStorage.getItem('tanktakip:fbAdres'); if(s!==null && FB_ADRESLER[+s]) fbAdresIdx=+s; }catch(e){}
+let FIREBASE_URL = FB_ADRESLER[fbAdresIdx];
+/* Bir adres bağlantı hatası verirse sıradakini dene ve hatırla */
+function fbAdresDegistir(){
+  const eski=fbAdresIdx;
+  fbAdresIdx=(fbAdresIdx+1)%FB_ADRESLER.length;
+  FIREBASE_URL=FB_ADRESLER[fbAdresIdx];
+  try{ localStorage.setItem('tanktakip:fbAdres',String(fbAdresIdx)); }catch(e){}
+  return eski!==fbAdresIdx;
+}
+/* Adresleri sırayla deneyen istek */
+async function fbIstek(yol, opt){
+  let sonHata=null;
+  for(let deneme=0; deneme<FB_ADRESLER.length; deneme++){
+    try{
+      return await fetch(FIREBASE_URL.replace(/\/$/,'')+yol, opt);
+    }catch(e){ sonHata=e; fbAdresDegistir(); }
+  }
+  throw sonHata||new Error('bağlantı yok');
+}
 const K_HEDEF='tanktakip:urunHedef';
 const K_URUNES='tanktakip:urunEslesme';
 const K_YEDEK='tanktakip:yedekTank';
 const K_YEDEK_TARIH='tanktakip:yedekSonTarih';
-const SURUM='07.08.2026 18:30';
+const K_REV='tanktakip:rev';      // her yazımda güncellenen küçük damga
+let sonRev=null;
+/* Yazım sonrası damgayı güncelle (fbSet'i çağırma — sonsuz döngü olur) */
+function revYaz(){
+  if(!FIREBASE_URL) return;
+  const v=Date.now();
+  sonRev=v;
+  try{
+    fbIstek('/'+encodeURIComponent(K_REV)+'.json',{method:'PUT', body:JSON.stringify(v)}).catch(()=>{});
+  }catch(e){}
+}
+const SURUM='08.08.2026 06:32';
 let urunHedef={};
 const K_PERSONEL='tanktakip:personel', K_AD_KILIT='tanktakip:cihazKilit';
 const K_TANK='tanktakip:tanklar', K_PROG='tanktakip:programv2', K_IS='tanktakip:isemri', K_VERI='tanktakip:veriYuklendi', K_DEV='tanktakip:devirdaimSure';
@@ -434,7 +470,7 @@ let yonetici=false;
 async function fbGet(k){
   if(!FIREBASE_URL) return undefined;
   try{
-    const r=await fetch(FIREBASE_URL.replace(/\/$/,'')+'/'+encodeURIComponent(k)+'.json');
+    const r=await fbIstek('/'+encodeURIComponent(k)+'.json');
     if(!r.ok) return undefined;
     const data=await r.json();
     return data===null?undefined:data;
@@ -443,7 +479,7 @@ async function fbGet(k){
 async function fbGetDurum(k){
   if(!FIREBASE_URL) return {ok:false, data:undefined, hata:'URL yok'};
   try{
-    const r=await fetch(FIREBASE_URL.replace(/\/$/,'')+'/'+encodeURIComponent(k)+'.json');
+    const r=await fbIstek('/'+encodeURIComponent(k)+'.json');
     if(!r.ok){
       let hata=''; try{ const j=await r.json(); hata=j&&j.error?j.error:''; }catch(e2){}
       bulutDurum.okuma=false; bulutDurum.mesaj=hata||('HTTP '+r.status);
@@ -457,8 +493,9 @@ async function fbGetDurum(k){
 let bulutDurum={yazma:null, okuma:null, mesaj:''};
 async function fbSet(k,v){
   if(!FIREBASE_URL) return false;
+  if(k!==K_REV) setTimeout(revYaz,0);
   try{
-    const r=await fetch(FIREBASE_URL.replace(/\/$/,'')+'/'+encodeURIComponent(k)+'.json',{method:'PUT',body:JSON.stringify(v)});
+    const r=await fbIstek('/'+encodeURIComponent(k)+'.json',{method:'PUT',body:JSON.stringify(v)});
     if(!r.ok){
       let hata=''; try{ const j=await r.json(); hata=j&&j.error?j.error:''; }catch(e2){}
       bulutDurum.yazma=false; bulutDurum.mesaj=hata||('HTTP '+r.status);
@@ -686,7 +723,12 @@ async function simdiSenkronEt(){
 function canliSenkronBaslat(){
   if(!FIREBASE_URL) return;
   setInterval(async()=>{
-    if(document.getElementById('panel')) return; // düzenleme sırasında araya girme
+    if(document.getElementById('panel')) return;   // düzenleme sırasında araya girme
+    if(document.hidden) return;                    // ekran kapalı/arka planda — boşuna veri çekme
+    /* hafif kontrol: hiçbir cihaz bir şey yazmadıysa ağır veriyi indirme */
+    const rev=await fbGet(K_REV);
+    if(rev!==undefined && sonRev!==null && rev===sonRev) return;
+    sonRev = (rev===undefined? sonRev : rev);
     const pd=await fbGetDurum(K_PROG);
     const [t,i,dv,pe]=await Promise.all([fbGet(K_TANK),fbGet(K_IS),fbGet(K_DEV),fbGet(K_PERSONEL)]);
     const p = pd.ok ? pd.data : undefined;
@@ -704,7 +746,7 @@ function canliSenkronBaslat(){
     if(p!==undefined){ const pN=programNormalize(nesneCoz(p)); if(JSON.stringify(pN)!==JSON.stringify(program)){ program=pN; degisti=true; } }
     if(i!==undefined && JSON.stringify(i)!==JSON.stringify(isemri)){ isemri=i; degisti=true; }
     if(degisti){ if(qrGoruntuKod) cizTankIsEmri(qrGoruntuKod); else ciz(); }
-  },15000);
+  },30000);
 }
 
 /* ================= görev tanımları ================= */
@@ -3837,6 +3879,7 @@ function yedek(){
   const qsTank=new URLSearchParams(location.search).get('tank');
   if(qsTank){ cizTankIsEmri(kodDuzelt(qsTank)); }
   else{ ciz(); }
+  try{ const r0=await fbGet(K_REV); if(r0!==undefined) sonRev=r0; }catch(e){}
   gunlukYedekAl();
   canliSenkronBaslat();
 })();
