@@ -448,7 +448,7 @@ function revYaz(){
     fbIstek('/'+encodeURIComponent(K_REV)+'.json',{method:'PUT', body:JSON.stringify(v)}).catch(()=>{});
   }catch(e){}
 }
-const SURUM='08.08.2026 06:32';
+const SURUM='09.08.2026 04:41';
 let urunHedef={};
 const K_PERSONEL='tanktakip:personel', K_AD_KILIT='tanktakip:cihazKilit';
 const K_TANK='tanktakip:tanklar', K_PROG='tanktakip:programv2', K_IS='tanktakip:isemri', K_VERI='tanktakip:veriYuklendi', K_DEV='tanktakip:devirdaimSure';
@@ -553,6 +553,35 @@ function yedekListesi(y){
   return Array.isArray(y.gecmis) ? y.gecmis : (y.tanklar?[{tarih:y.tarih,sayi:y.sayi,tanklar:y.tanklar}]:[]);
 }
 /* Yedekte olup şu an olmayan tanklar */
+/* 7 günlük yedekte olup şu an olmayan NOT ve ÖLÇÜMLERİ bul */
+async function kayipKayitlar(){
+  const liste=yedekListesi(await fbGet(K_YEDEK));
+  const sonuc={notlar:[], olcumler:[], yedekSayi:liste.length};
+  if(!liste.length) return sonuc;
+  const simdi=new Map();
+  tanklar.forEach(t=>{ simdi.set(kodNormal(t.kod||''), t); });
+  const gorulenNot=new Set(), gorulenOlc=new Set();
+  liste.forEach(y=>(y.tanklar||[]).forEach(yt=>{
+    const k=kodNormal(yt.kod||'');
+    const t=simdi.get(k);
+    if(!t) return;                                   // tank yok — o ayrı araçta
+    const mevcutNot=new Set((t.notlar2||[]).map(n=>n.id||n.m));
+    (yt.notlar2||[]).forEach(n=>{
+      const nk=k+'|'+(n.id||n.m);
+      if(mevcutNot.has(n.id||n.m) || gorulenNot.has(nk)) return;
+      gorulenNot.add(nk);
+      sonuc.notlar.push({kod:t.kod, hedefId:t.id, not:n, yedek:y.tarih});
+    });
+    const mevcutOlc=new Set((t.olcumler||[]).map(o=>(o.tarih||'')+'|'+(o.ph||'')+'|'+(o.tuz||'')+'|'+(o.saat||'')));
+    (yt.olcumler||[]).forEach(o=>{
+      const ok=(o.tarih||'')+'|'+(o.ph||'')+'|'+(o.tuz||'')+'|'+(o.saat||'');
+      if(mevcutOlc.has(ok) || gorulenOlc.has(k+'|'+ok)) return;
+      gorulenOlc.add(k+'|'+ok);
+      sonuc.olcumler.push({kod:t.kod, hedefId:t.id, olcum:o, yedek:y.tarih});
+    });
+  }));
+  return sonuc;
+}
 async function kayipTanklar(){
   const liste=yedekListesi(await fbGet(K_YEDEK));
   if(!liste.length) return {yedek:null, eksik:[], gecmis:[]};
@@ -585,18 +614,62 @@ function tankLog(t, alan, eski, yeni, kaynak){
   });
   if(t.log.length>30) t.log.length=30;
 }
+/* İki listeyi kimliğe göre birleştir — hiçbir kayıt kaybolmasın */
+function diziBirlestir(a, b, anahtar){
+  const out=[], gorulen=new Set();
+  [...(Array.isArray(a)?a:[]), ...(Array.isArray(b)?b:[])].forEach(x=>{
+    if(!x || typeof x!=='object') return;
+    const k=anahtar(x);
+    if(gorulen.has(k)) return;
+    gorulen.add(k); out.push(x);
+  });
+  return out;
+}
+/* Aynı tankın iki kopyasını birleştir: notlar/ölçümler/kimyasallar/log toplanır */
+function tankBirlestir(yerel, bulut){
+  if(!bulut) return yerel;
+  const t={...bulut, ...yerel};                    // düz alanlarda elimdeki kazanır
+  t.notlar2   = diziBirlestir(yerel.notlar2,   bulut.notlar2,   n=>n.id||n.m);
+  t.olcumler  = diziBirlestir(yerel.olcumler,  bulut.olcumler,  o=>(o.tarih||'')+'|'+(o.ph||'')+'|'+(o.tuz||'')+'|'+(o.saat||''));
+  t.kimyasallar = diziBirlestir(yerel.kimyasallar, bulut.kimyasallar, x=>(x.tarih||'')+'|'+(x.ad||'')+'|'+(x.miktar||''));
+  t.log       = diziBirlestir(yerel.log,       bulut.log,       l=>(l.t||'')+'|'+(l.s||'')+'|'+(l.a||'')+'|'+(l.y||''));
+  if(t.log && t.log.length>30) t.log.length=30;
+  t.gecmis    = diziBirlestir(yerel.gecmis,    bulut.gecmis,    g=>(g.baslangic||'')+'|'+(g.urun||''));
+  /* buluttaki not/ölçüm elimde yoksa bunlar geri gelmiş demektir */
+  return t;
+}
 async function tankYaz(){
   if(!FIREBASE_URL){ try{ localStorage.setItem(K_TANK,JSON.stringify(tanklar)); }catch(e){} return false; }
   const d=await fbGetDurum(K_TANK);
   if(d.ok && Array.isArray(d.data)){
+    const bulutHar=new Map();
+    d.data.forEach(t=>{ if(t&&t.id) bulutHar.set(t.id,t); });
+    const kodHar=new Map();
+    d.data.forEach(t=>{ if(t&&t.kod) kodHar.set(kodNormal(t.kod),t); });
+    /* 1) Ortak tankların alt kayıtlarını birleştir */
+    let kurtarilanNot=0, kurtarilanOlcum=0;
+    tanklar=tanklar.map(t=>{
+      const b=bulutHar.get(t.id) || kodHar.get(kodNormal(t.kod||''));
+      if(!b) return t;
+      const oncekiNot=(t.notlar2||[]).length, oncekiOlcum=(t.olcumler||[]).length;
+      const m=tankBirlestir(t,b);
+      kurtarilanNot   += Math.max(0,(m.notlar2||[]).length - oncekiNot);
+      kurtarilanOlcum += Math.max(0,(m.olcumler||[]).length - oncekiOlcum);
+      return m;
+    });
+    /* 2) Tamamen eksik tankları geri ekle */
     const bendekiId=new Set(tanklar.map(t=>t.id));
     const bendekiKod=new Set(tanklar.map(t=>kodNormal(t.kod||'')));
     const geriGelen=d.data.filter(t=>
       !bendekiId.has(t.id) && !bendekiKod.has(kodNormal(t.kod||'')) && !silinenler.has(t.id));
     if(geriGelen.length){
       geriGelen.forEach(t=>{ if(t.kod) t.kod=kodDuzelt(t.kod); tanklar.push(t); });
-      toast(geriGelen.length+' tank buluttan korundu');
     }
+    const parca=[];
+    if(geriGelen.length) parca.push(geriGelen.length+' tank');
+    if(kurtarilanNot) parca.push(kurtarilanNot+' not');
+    if(kurtarilanOlcum) parca.push(kurtarilanOlcum+' ölçüm');
+    if(parca.length) toast(parca.join(' · ')+' buluttan korundu');
   }
   return await sSet(K_TANK,tanklar);
 }
@@ -2089,6 +2162,7 @@ function cizProgram(){
   <div class="grafKutu">
     <p class="hint" style="margin:0">Tank listesinin günlük yedeği buluta alınır. Bir tank kaybolduysa buradan geri getirebilirsin.</p>
     <button class="btn ghost" id="kayipBul" style="margin-top:10px">Kayıp Tank Var mı? Kontrol Et</button>
+    <button class="btn ghost" id="kayipKayit" style="margin-top:8px">📝 Kayıp Not / Ölçüm Ara</button>
     <div id="kayipSonuc"></div>
   </div>`:''}
   <div class="sec">Uygulama Sürümü</div>
@@ -2149,6 +2223,38 @@ function cizProgram(){
       secili.forEach(id=>{ const t=tanklar.find(x=>x.id===id); if(t){ tankLog(t,'baslangic',t.baslangic,bug,'Denetim'); t.baslangic=bug; } });
       await tankYaz(); ciz(); toast(secili.length+' tankın tarihi düzeltildi');
       document.getElementById('tarihDenetle').click();
+    };
+  };
+  const kk=document.getElementById('kayipKayit');
+  if(kk) kk.onclick=async()=>{
+    const alan=document.getElementById('kayipSonuc');
+    alan.innerHTML='<p class="hint">7 günlük yedek taranıyor…</p>';
+    const r=await kayipKayitlar();
+    if(!r.yedekSayi){ alan.innerHTML='<p class="hint">Henüz yedek yok.</p>'; return; }
+    if(!r.notlar.length && !r.olcumler.length){
+      alan.innerHTML='<p class="hint" style="color:var(--yesil)">✓ Kayıp not veya ölçüm yok ('+r.yedekSayi+' günlük yedek tarandı).</p>'; return;
+    }
+    alan.innerHTML='<p class="hint" style="color:var(--alarm)"><b>'+r.notlar.length+' not</b> ve <b>'+r.olcumler.length+' ölçüm</b> yedekte var ama şu an sistemde yok:</p>'
+      + r.notlar.slice(0,20).map(x=>`<div class="log"><span class="d">${x.kod}</span><span class="v">${String(x.not.m||'').slice(0,90)}<span class="n">${x.not.k||'—'}${x.not.t?' · '+kisaTarih(x.not.t):''} · yedek ${kisaTarih(x.yedek)}</span></span></div>`).join('')
+      + (r.notlar.length>20?`<p class="hint">… ve ${r.notlar.length-20} not daha</p>`:'')
+      + (r.olcumler.length?`<p class="hint">+ ${r.olcumler.length} ölçüm kaydı</p>`:'')
+      + '<button class="btn" id="kayitGeri" style="margin-top:10px">Hepsini Geri Getir</button>'
+      + '<p class="hint">Mevcut notlara dokunulmaz, sadece eksikler eklenir.</p>';
+    document.getElementById('kayitGeri').onclick=async()=>{
+      const ok=await onayDialog('Geri Getir',
+        r.notlar.length+' not ve '+r.olcumler.length+' ölçüm eklenecek.\nMevcut kayıtların hiçbiri silinmez.','Geri Getir');
+      if(!ok) return;
+      let n=0,o=0;
+      r.notlar.forEach(x=>{ const t=tanklar.find(y=>y.id===x.hedefId); if(!t) return;
+        const liste=notListe(t);
+        if(!liste.some(z=>(z.id||z.m)===(x.not.id||x.not.m))){ liste.push(x.not); n++; } });
+      r.olcumler.forEach(x=>{ const t=tanklar.find(y=>y.id===x.hedefId); if(!t) return;
+        t.olcumler=t.olcumler||[];
+        const imza=z=>(z.tarih||'')+'|'+(z.ph||'')+'|'+(z.tuz||'')+'|'+(z.saat||'');
+        if(!t.olcumler.some(z=>imza(z)===imza(x.olcum))){ t.olcumler.push(x.olcum); o++; } });
+      tanklar.forEach(t=>{ if(Array.isArray(t.notlar2)) t.notlar2.sort((a,b)=>String(b.t||'').localeCompare(String(a.t||'')));
+        if(Array.isArray(t.olcumler)) t.olcumler.sort((a,b)=>String(b.tarih||'').localeCompare(String(a.tarih||''))); });
+      await tankYaz(); ciz(); toast(n+' not, '+o+' ölçüm geri getirildi');
     };
   };
   const kb=document.getElementById('kayipBul');
