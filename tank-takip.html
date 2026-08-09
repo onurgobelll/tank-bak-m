@@ -482,7 +482,7 @@ function revYaz(){
     fbIstek('/'+encodeURIComponent(K_REV)+'.json',{method:'PUT', body:JSON.stringify(v)}).catch(()=>{});
   }catch(e){}
 }
-const SURUM='09.08.2026 05:08';
+const SURUM='09.08.2026 06:11';
 let urunHedef={};
 const K_PERSONEL='tanktakip:personel', K_AD_KILIT='tanktakip:cihazKilit';
 /* v3 anahtarları: eski sürümlü cihazlar (eski önbellekli bilgisayar/telefon)
@@ -674,6 +674,44 @@ function tankBirlestir(yerel, bulut){
   t.gecmis    = diziBirlestir(yerel.gecmis,    bulut.gecmis,    g=>(g.baslangic||'')+'|'+(g.urun||''));
   /* buluttaki not/ölçüm elimde yoksa bunlar geri gelmiş demektir */
   return t;
+}
+/* Eski sürümdeki cihazlar eski anahtarlara yazmaya devam ediyor.
+   Oradaki YENİ kayıtları (onay/not/ölçüm/tank) alıp v3'e ekle — hiçbir şey silme. */
+async function eskiAlandanTopla(){
+  if(!FIREBASE_URL || tankKaynak!=='bulut') return {onay:0,not:0,olcum:0,tank:0};
+  const sonuc={onay:0,not:0,olcum:0,tank:0};
+  try{
+    const [eskiT, eskiI] = await Promise.all([fbGet(K_TANK_ESKI), fbGet(K_IS_ESKI)]);
+    /* --- onaylar --- */
+    if(eskiI && typeof eskiI==='object'){
+      Object.keys(eskiI).forEach(tarih=>{
+        const gun=eskiI[tarih]; if(!gun||typeof gun!=='object') return;
+        const hedef=isemri[tarih]=isemri[tarih]||{};
+        Object.keys(gun).forEach(k=>{
+          if(hedef[k]!==undefined) return;
+          if(onayGeriAlinan.has(tarih+'|'+k)) return;   // bilerek geri alınmış
+          hedef[k]=gun[k]; sonuc.onay++;
+        });
+      });
+    }
+    /* --- tanklar: notlar, ölçümler, eksik tanklar --- */
+    if(Array.isArray(eskiT) && eskiT.length){
+      const har=new Map(); tanklar.forEach(t=>har.set(kodNormal(t.kod||''), t));
+      eskiT.forEach(et=>{
+        const t=har.get(kodNormal(et.kod||''));
+        if(!t){
+          if(!silinenler.has(et.id)){ et.kod=kodDuzelt(et.kod); tanklar.push(et); sonuc.tank++; }
+          return;
+        }
+        const oncekiN=(t.notlar2||[]).length, oncekiO=(t.olcumler||[]).length;
+        const m=tankBirlestir(t, et);
+        t.notlar2=m.notlar2; t.olcumler=m.olcumler; t.kimyasallar=m.kimyasallar; t.log=m.log;
+        sonuc.not   += Math.max(0,(t.notlar2||[]).length-oncekiN);
+        sonuc.olcum += Math.max(0,(t.olcumler||[]).length-oncekiO);
+      });
+    }
+  }catch(e){}
+  return sonuc;
 }
 async function tankYaz(){
   if(!FIREBASE_URL){ try{ localStorage.setItem(K_TANK,JSON.stringify(tanklar)); }catch(e){} return false; }
@@ -2200,6 +2238,7 @@ function cizProgram(){
     <p class="hint" style="margin:0">Tank listesinin günlük yedeği buluta alınır. Bir tank kaybolduysa buradan geri getirebilirsin.</p>
     <button class="btn ghost" id="kayipBul" style="margin-top:10px">Kayıp Tank Var mı? Kontrol Et</button>
     <button class="btn ghost" id="kayipKayit" style="margin-top:8px">📝 Kayıp Not / Ölçüm Ara</button>
+    <button class="btn ghost" id="veriKontrol" style="margin-top:8px">🔍 Veri Kontrolü (eksik var mı?)</button>
     <div id="kayipSonuc"></div>
   </div>`:''}
   <div class="sec">Uygulama Sürümü</div>
@@ -2260,6 +2299,48 @@ function cizProgram(){
       secili.forEach(id=>{ const t=tanklar.find(x=>x.id===id); if(t){ tankLog(t,'baslangic',t.baslangic,bug,'Denetim'); t.baslangic=bug; } });
       await tankYaz(); ciz(); toast(secili.length+' tankın tarihi düzeltildi');
       document.getElementById('tarihDenetle').click();
+    };
+  };
+  const vk=document.getElementById('veriKontrol');
+  if(vk) vk.onclick=async()=>{
+    const alan=document.getElementById('kayipSonuc');
+    alan.innerHTML='<p class="hint">Karşılaştırılıyor…</p>';
+    let eskiT=[], eskiI={};
+    try{ [eskiT,eskiI]=await Promise.all([fbGet(K_TANK_ESKI),fbGet(K_IS_ESKI)]); }catch(e){}
+    eskiT=Array.isArray(eskiT)?eskiT:[]; eskiI=(eskiI&&typeof eskiI==='object')?eskiI:{};
+    const aktif=tanklar.filter(t=>!t.bosaltildi).length;
+    const notT=tanklar.reduce((n,t)=>n+notSayi(t),0);
+    const olcT=tanklar.reduce((n,t)=>n+((t.olcumler||[]).length),0);
+    const onayT=Object.values(isemri).reduce((n,g)=>n+Object.keys(g||{}).length,0);
+    const eskiOnay=Object.values(eskiI).reduce((n,g)=>n+Object.keys(g||{}).length,0);
+    const kodVar=new Set(tanklar.map(t=>kodNormal(t.kod||'')));
+    const eksikTank=eskiT.filter(t=>!kodVar.has(kodNormal(t.kod||''))).map(t=>t.kod);
+    let eksikOnay=0;
+    Object.keys(eskiI).forEach(tar=>Object.keys(eskiI[tar]||{}).forEach(k=>{
+      if(!(isemri[tar]||{})[k] && !onayGeriAlinan.has(tar+'|'+k)) eksikOnay++;
+    }));
+    const sat=(a,b)=>`<div class="log"><span class="d">${a}</span><span class="v">${b}</span></div>`;
+    alan.innerHTML=
+      '<p class="hint"><b>Güncel alan (kullanılan)</b></p>'
+      + sat('Tank', tanklar.length+' kayıtlı · '+aktif+' aktif (dolu)')
+      + sat('Not', notT+' not · '+olcT+' ölçüm')
+      + sat('Onay', onayT+' görev onayı')
+      + '<p class="hint" style="margin-top:10px"><b>Eski alan (eski sürümlü cihazlar)</b></p>'
+      + sat('Tank', eskiT.length+' kayıt')
+      + sat('Onay', eskiOnay+' onay')
+      + '<p class="hint" style="margin-top:10px"><b>Eksik olan</b></p>'
+      + ((eksikTank.length||eksikOnay)
+          ? sat('⚠ Eksik', (eksikTank.length?eksikTank.length+' tank ('+eksikTank.slice(0,8).join(', ')+(eksikTank.length>8?'…':'')+')':'')
+              + (eksikTank.length&&eksikOnay?' · ':'') + (eksikOnay?eksikOnay+' onay':''))
+            + '<button class="btn" id="eksikAl" style="margin-top:10px">Eksikleri Getir</button>'
+          : '<p class="hint" style="color:var(--yesil)">✓ Eksik kayıt yok — her şey güncel alanda.</p>');
+    const ea=document.getElementById('eksikAl');
+    if(ea) ea.onclick=async()=>{
+      const r=await eskiAlandanTopla();
+      if(r.tank||r.not||r.olcum) await tankYaz();
+      if(r.onay) await isemriYaz();
+      ciz(); toast((r.onay+r.tank+r.not+r.olcum)+' kayıt getirildi');
+      document.getElementById('veriKontrol').click();
     };
   };
   const kk=document.getElementById('kayipKayit');
@@ -4037,6 +4118,20 @@ function yedek(){
   else{ ciz(); }
   try{ const r0=await fbGet(K_REV); if(r0!==undefined) sonRev=r0; }catch(e){}
   surumKontrol();
+  /* geçiş dönemi: eski alandaki kayıtları topla */
+  (async()=>{
+    const r=await eskiAlandanTopla();
+    const p=[];
+    if(r.onay)  p.push(r.onay+' onay');
+    if(r.not)   p.push(r.not+' not');
+    if(r.olcum) p.push(r.olcum+' ölçüm');
+    if(r.tank)  p.push(r.tank+' tank');
+    if(p.length){
+      if(r.tank||r.not||r.olcum) await tankYaz();
+      if(r.onay) await isemriYaz();
+      ciz(); toast(p.join(' · ')+' eski alandan alındı');
+    }
+  })();
   gunlukYedekAl();
   canliSenkronBaslat();
 })();
