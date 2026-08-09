@@ -412,6 +412,9 @@ const FB_ADRESLER = [
   'https://tank-takip-default-rtdb.firebasedatabase.app',   // aynı veritabanı, farklı alan adı
   'https://tank-takip-default-rtdb.us-central1.firebasedatabase.app'
 ];
+/* Firebase kuralları bu anahtarı bilmeyen isteği reddeder (auth=... parametresi).
+   Kural örneği: ".read": "query.auth === 'BURAYA_ANAHTAR'" */
+const FB_ANAHTAR = 'z5oXxToTjS4fCW1vgcIrYjjMseBwS7z8';
 let fbAdresIdx = 0;
 try{ const s=localStorage.getItem('tanktakip:fbAdres'); if(s!==null && FB_ADRESLER[+s]) fbAdresIdx=+s; }catch(e){}
 let FIREBASE_URL = FB_ADRESLER[fbAdresIdx];
@@ -425,10 +428,12 @@ function fbAdresDegistir(){
 }
 /* Adresleri sırayla deneyen istek */
 async function fbIstek(yol, opt){
+  const ayrac = yol.includes('?') ? '&' : '?';
+  const tamYol = yol + ayrac + 'auth=' + encodeURIComponent(FB_ANAHTAR);
   let sonHata=null;
   for(let deneme=0; deneme<FB_ADRESLER.length; deneme++){
     try{
-      return await fetch(FIREBASE_URL.replace(/\/$/,'')+yol, opt);
+      return await fetch(FIREBASE_URL.replace(/\/$/,'')+tamYol, opt);
     }catch(e){ sonHata=e; fbAdresDegistir(); }
   }
   throw sonHata||new Error('bağlantı yok');
@@ -482,7 +487,7 @@ function revYaz(){
     fbIstek('/'+encodeURIComponent(K_REV)+'.json',{method:'PUT', body:JSON.stringify(v)}).catch(()=>{});
   }catch(e){}
 }
-const SURUM='09.08.2026 06:11';
+const SURUM='09.08.2026 10:09';
 let urunHedef={};
 const K_PERSONEL='tanktakip:personel', K_AD_KILIT='tanktakip:cihazKilit';
 /* v3 anahtarları: eski sürümlü cihazlar (eski önbellekli bilgisayar/telefon)
