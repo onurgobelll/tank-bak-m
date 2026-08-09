@@ -437,6 +437,40 @@ const K_HEDEF='tanktakip:urunHedef';
 const K_URUNES='tanktakip:urunEslesme';
 const K_YEDEK='tanktakip:yedekTank';
 const K_YEDEK_TARIH='tanktakip:yedekSonTarih';
+const K_SURUM_BULUT='tanktakip:sonSurum';   // yayındaki en yeni sürüm damgası
+/* 'DD.MM.YYYY HH:MM' -> karşılaştırılabilir sayı */
+function surumSayi(s){
+  const m=String(s||'').match(/^(\d{2})\.(\d{2})\.(\d{4})\s+(\d{2}):(\d{2})$/);
+  return m? +(m[3]+m[2]+m[1]+m[4]+m[5]) : 0;
+}
+/* Bu cihaz eskiyse: önbelleği temizleyip kendini güncelle (oturumda bir kez) */
+async function surumKontrol(){
+  if(!FIREBASE_URL) return;
+  let bulutSurum;
+  try{ bulutSurum=await fbGet(K_SURUM_BULUT); }catch(e){ return; }
+  const benim=surumSayi(SURUM), uzak=surumSayi(bulutSurum);
+  if(!uzak) { if(benim) fbSet(K_SURUM_BULUT, SURUM); return; }
+  if(benim>uzak){ fbSet(K_SURUM_BULUT, SURUM); return; }   // en yeni bendeyim, duyur
+  if(benim>=uzak) return;
+  /* eskiyim — sonsuz döngüye girmemek için oturumda tek deneme */
+  let denendi=false;
+  try{ denendi=sessionStorage.getItem('tanktakip:otoGun')===String(uzak); }catch(e){}
+  if(denendi){
+    toast('⚠ Yeni sürüm var ('+bulutSurum+'). Program → 🔄 Güncellemeyi Zorla');
+    return;
+  }
+  try{ sessionStorage.setItem('tanktakip:otoGun',String(uzak)); }catch(e){}
+  toast('Yeni sürüm bulundu, güncelleniyor…');
+  try{
+    if('caches' in window){ const ks=await caches.keys(); await Promise.all(ks.map(k=>caches.delete(k))); }
+    if(navigator.serviceWorker){
+      const rs=await navigator.serviceWorker.getRegistrations();
+      await Promise.all(rs.map(r=>r.unregister()));
+    }
+  }catch(e){}
+  setTimeout(()=>{ const u=location.pathname+'?v='+Date.now();
+    if(window.__yenile) window.__yenile(u); else location.replace(u); }, 600);
+}
 const K_REV='tanktakip:rev';      // her yazımda güncellenen küçük damga
 let sonRev=null;
 /* Yazım sonrası damgayı güncelle (fbSet'i çağırma — sonsuz döngü olur) */
@@ -448,10 +482,13 @@ function revYaz(){
     fbIstek('/'+encodeURIComponent(K_REV)+'.json',{method:'PUT', body:JSON.stringify(v)}).catch(()=>{});
   }catch(e){}
 }
-const SURUM='09.08.2026 04:41';
+const SURUM='09.08.2026 05:08';
 let urunHedef={};
 const K_PERSONEL='tanktakip:personel', K_AD_KILIT='tanktakip:cihazKilit';
-const K_TANK='tanktakip:tanklar', K_PROG='tanktakip:programv2', K_IS='tanktakip:isemri', K_VERI='tanktakip:veriYuklendi', K_DEV='tanktakip:devirdaimSure';
+/* v3 anahtarları: eski sürümlü cihazlar (eski önbellekli bilgisayar/telefon)
+   eski anahtarlara yazar, buradaki veriyi bozamaz. */
+const K_TANK='tanktakip:tanklar_v3', K_PROG='tanktakip:programv2', K_IS='tanktakip:isemri_v3', K_VERI='tanktakip:veriYuklendi', K_DEV='tanktakip:devirdaimSure';
+const K_TANK_ESKI='tanktakip:tanklar', K_IS_ESKI='tanktakip:isemri';
 const DEV_VARSAYILAN={A:'2+2',B:'2+2',C:'2+2',D:'1+1',E:'1+1'};
 let devirdaimSure={...DEV_VARSAYILAN};
 function devSureDeger(t){
@@ -3916,6 +3953,19 @@ function yedek(){
 
 /* ================= başlat ================= */
 (async()=>{
+  /* tek seferlik geçiş: v3 boşsa eski anahtardaki veriyi taşı */
+  try{
+    const yeniD=await fbGetDurum(K_TANK);
+    if(yeniD.ok && (yeniD.data===undefined || yeniD.data===null || (Array.isArray(yeniD.data)&&!yeniD.data.length))){
+      const eskiD=await fbGetDurum(K_TANK_ESKI);
+      if(eskiD.ok && Array.isArray(eskiD.data) && eskiD.data.length){
+        await fbSet(K_TANK, eskiD.data);
+        const eskiIs=await fbGet(K_IS_ESKI);
+        if(eskiIs && typeof eskiIs==='object') await fbSet(K_IS, eskiIs);
+        toast(eskiD.data.length+' tank yeni güvenli alana taşındı');
+      }
+    }
+  }catch(e){}
   const tankDurum=await fbGetDurum(K_TANK);
   tankKaynak='bulut';
   if(tankDurum.ok && tankDurum.data!==undefined){
@@ -3986,6 +4036,7 @@ function yedek(){
   if(qsTank){ cizTankIsEmri(kodDuzelt(qsTank)); }
   else{ ciz(); }
   try{ const r0=await fbGet(K_REV); if(r0!==undefined) sonRev=r0; }catch(e){}
+  surumKontrol();
   gunlukYedekAl();
   canliSenkronBaslat();
 })();
