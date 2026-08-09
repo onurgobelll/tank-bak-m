@@ -87,6 +87,17 @@ main{padding:8px 16px 0}
 .gecRozet{color:#DC2626;font-weight:700}
 .gecSay{color:#DC2626;margin-left:3px;font-size:.85em}
 .notKart{background:#FFFBEB;border:1px solid #FDE68A;border-radius:12px;padding:11px 13px;margin-bottom:8px}
+.ndFotoOnizle{position:relative;display:inline-block;margin-top:4px}
+.ndFotoOnizle img{max-width:100%;max-height:180px;border-radius:10px;display:block;object-fit:cover}
+.ndFotoOnizle button{position:absolute;top:6px;right:6px;width:26px;height:26px;border-radius:50%;
+  background:rgba(0,0,0,.6);color:#fff;border:none;font-size:14px;line-height:1}
+.notFotoRozet{margin-top:7px;border:1px solid #FDE68A;background:#fff;color:#92400E;
+  border-radius:8px;padding:5px 11px;font-size:11.5px;font-weight:600}
+.notFotoRozet:active{transform:scale(.96)}
+.fotoOverlay{position:fixed;inset:0;background:rgba(0,0,0,.88);z-index:999;
+  display:flex;align-items:center;justify-content:center;padding:20px}
+.fotoOverlay img{max-width:100%;max-height:100%;border-radius:10px}
+.fotoYukleniyor{color:#fff;font-size:14px}
 .notMetin{font-size:14px;color:var(--ink);line-height:1.45;white-space:pre-wrap;word-break:break-word}
 .notAlt{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:8px;flex-wrap:wrap}
 .notAlt>span:first-child{font-size:11px;color:#92400E}
@@ -487,7 +498,7 @@ function revYaz(){
     fbIstek('/'+encodeURIComponent(K_REV)+'.json',{method:'PUT', body:JSON.stringify(v)}).catch(()=>{});
   }catch(e){}
 }
-const SURUM='09.08.2026 10:09';
+const SURUM='09.08.2026 16:07';
 let urunHedef={};
 const K_PERSONEL='tanktakip:personel', K_AD_KILIT='tanktakip:cihazKilit';
 /* v3 anahtarları: eski sürümlü cihazlar (eski önbellekli bilgisayar/telefon)
@@ -1049,7 +1060,52 @@ function girdiDialog(baslik, detay, placeholder, tip){
     ov.onclick=e=>{ if(e.target===ov) bitir(null); };
   });
 }
-function notDialog(baslik, mevcut){
+/* ---- NOT FOTOĞRAFI: tank kaydına gömülmez, ayrı anahtarda tutulur.
+   Tank kaydında sadece foto kimliği (birkaç bayt) durur — tank listesi
+   çekilirken hiçbir fotoğraf inmez; foto yalnız o not açıldığında istenir. */
+const K_FOTO_ON='tanktakip:foto:';   // + fotoId
+function dosyayiSikistir(file, maxKenar, kalite){
+  return new Promise((resolve,reject)=>{
+    const img=new Image();
+    const url=URL.createObjectURL(file);
+    img.onload=()=>{
+      URL.revokeObjectURL(url);
+      let w=img.width, h=img.height;
+      if(w>h && w>maxKenar){ h=Math.round(h*maxKenar/w); w=maxKenar; }
+      else if(h>maxKenar){ w=Math.round(w*maxKenar/h); h=maxKenar; }
+      const cv=document.createElement('canvas'); cv.width=w; cv.height=h;
+      cv.getContext('2d').drawImage(img,0,0,w,h);
+      resolve(cv.toDataURL('image/jpeg', kalite));
+    };
+    img.onerror=()=>{ URL.revokeObjectURL(url); reject(new Error('görsel okunamadı')); };
+    img.src=url;
+  });
+}
+async function fotoYukle(file){
+  const veriUrl=await dosyayiSikistir(file, 900, 0.6);   // ~80-150 KB
+  const fotoId='f'+Date.now()+Math.random().toString(36).slice(2,7);
+  await fbSet(K_FOTO_ON+fotoId, veriUrl);
+  return fotoId;
+}
+async function fotoGetir(fotoId){
+  if(!fotoId) return null;
+  try{ return await fbGet(K_FOTO_ON+fotoId); }catch(e){ return null; }
+}
+async function fotoSil(fotoId){
+  if(!fotoId) return;
+  try{ await fbIstek('/'+encodeURIComponent(K_FOTO_ON+fotoId)+'.json', {method:'DELETE'}); }catch(e){}
+}
+async function fotoGoster(fotoId){
+  const ov=document.createElement('div');
+  ov.className='fotoOverlay';
+  ov.innerHTML='<div class="fotoYukleniyor">Yükleniyor…</div>';
+  document.body.appendChild(ov);
+  ov.onclick=()=>ov.remove();
+  const url=await fotoGetir(fotoId);
+  if(!ov.isConnected) return;
+  ov.innerHTML = url ? `<img src="${url}">` : '<div class="fotoYukleniyor">Fotoğraf yüklenemedi</div>';
+}
+function notDialog(baslik, mevcutMetin, mevcutFotoId){
   return new Promise(resolve=>{
     const ov=document.createElement('div');
     ov.className='onayOverlay';
@@ -1057,6 +1113,9 @@ function notDialog(baslik, mevcut){
       <div class="onayKutu">
         <p class="ob">${baslik}</p>
         <textarea id="ndIn" rows="4" placeholder="Örn: Üst kısımda köpürme var, 2 gün sonra tekrar bak"></textarea>
+        <div id="ndFotoAlan" style="margin-top:10px"></div>
+        <input type="file" id="ndDosya" accept="image/*" capture="environment" style="display:none">
+        <button class="btn ghost" id="ndFotoBtn" style="margin-top:8px;width:100%">📷 Fotoğraf Ekle</button>
         <div class="two" style="margin-top:14px">
           <button class="btn ghost" id="ndIptal">İptal</button>
           <button class="btn" id="ndTamam">Kaydet</button>
@@ -1064,11 +1123,42 @@ function notDialog(baslik, mevcut){
       </div>`;
     document.body.appendChild(ov);
     const inp=ov.querySelector('#ndIn');
-    inp.value=mevcut||'';
+    inp.value=mevcutMetin||'';
     setTimeout(()=>{ inp.focus(); inp.setSelectionRange(inp.value.length,inp.value.length); },60);
+    let fotoId=mevcutFotoId||null, fotoDegisti=false, yeniDosya=null;
+    const fotoAlan=ov.querySelector('#ndFotoAlan');
+    const fotoBtn=ov.querySelector('#ndFotoBtn');
+    const guncelleFotoGorunum=async()=>{
+      if(yeniDosya){
+        fotoAlan.innerHTML=`<div class="ndFotoOnizle"><img src="${URL.createObjectURL(yeniDosya)}"><button type="button" id="ndFotoSil">✕</button></div>`;
+      }else if(fotoId){
+        fotoAlan.innerHTML='<p class="hint">Fotoğraf yükleniyor…</p>';
+        const url=await fotoGetir(fotoId);
+        fotoAlan.innerHTML = url
+          ? `<div class="ndFotoOnizle"><img src="${url}"><button type="button" id="ndFotoSil">✕</button></div>`
+          : '<p class="hint">Fotoğraf yüklenemedi</p>';
+      }else fotoAlan.innerHTML='';
+      const sb=fotoAlan.querySelector('#ndFotoSil');
+      if(sb) sb.onclick=()=>{ yeniDosya=null; fotoId=null; fotoDegisti=true; guncelleFotoGorunum(); };
+    };
+    guncelleFotoGorunum();
+    fotoBtn.onclick=()=>ov.querySelector('#ndDosya').click();
+    ov.querySelector('#ndDosya').onchange=e=>{
+      const f=e.target.files[0]; if(!f) return;
+      yeniDosya=f; fotoDegisti=true; guncelleFotoGorunum();
+    };
     const bitir=v=>{ ov.remove(); resolve(v); };
     ov.querySelector('#ndIptal').onclick=()=>bitir(null);
-    ov.querySelector('#ndTamam').onclick=()=>bitir(inp.value.trim());
+    ov.querySelector('#ndTamam').onclick=async()=>{
+      const metin=inp.value.trim();
+      const btn=ov.querySelector('#ndTamam');
+      if(yeniDosya){
+        btn.disabled=true; btn.textContent='Yükleniyor…';
+        try{ fotoId=await fotoYukle(yeniDosya); }
+        catch(err){ toast('Fotoğraf yüklenemedi'); btn.disabled=false; btn.textContent='Kaydet'; return; }
+      }
+      bitir({metin, fotoId, fotoDegisti});
+    };
     ov.onclick=e=>{ if(e.target===ov) bitir(null); };
   });
 }
@@ -1127,28 +1217,32 @@ function notListe(t){
 function notSayi(t){ return (Array.isArray(t.notlar2)?t.notlar2:(t.notlar&&String(t.notlar).trim()?[1]:[])).length; }
 async function notEkle(id){
   const t=tanklar.find(x=>x.id===id); if(!t) return;
-  const m=await notDialog(t.kod+' — Yeni Not','');
-  if(m===null || !m) return;
-  notListe(t).unshift({id:'n'+Date.now(), m, k:kullaniciAdi()||'—', t:bugunISO(), s:saatSimdi()});
+  const r=await notDialog(t.kod+' — Yeni Not','');
+  if(r===null || (!r.metin && !r.fotoId)) return;
+  notListe(t).unshift({id:'n'+Date.now(), m:r.metin, foto:r.fotoId||null, k:kullaniciAdi()||'—', t:bugunISO(), s:saatSimdi()});
   await tankYaz(); kapat(); detay(id); toast('Not eklendi');
 }
 async function notDuzenleFn(id, nid){
   const t=tanklar.find(x=>x.id===id); if(!t) return;
   const n=notListe(t).find(x=>x.id===nid); if(!n) return;
-  const m=await notDialog(t.kod+' — Notu Düzenle', n.m);
-  if(m===null) return;
-  if(!m){ toast('Not boş bırakılamaz'); return; }
-  n.m=m; n.duz={k:kullaniciAdi()||'—', t:bugunISO(), s:saatSimdi()};
+  const eskiFoto=n.foto;
+  const r=await notDialog(t.kod+' — Notu Düzenle', n.m, n.foto);
+  if(r===null) return;
+  if(!r.metin && !r.fotoId){ toast('Not boş bırakılamaz'); return; }
+  n.m=r.metin; n.foto=r.fotoId||null;
+  n.duz={k:kullaniciAdi()||'—', t:bugunISO(), s:saatSimdi()};
   await tankYaz(); kapat(); detay(id); toast('Not güncellendi');
+  if(r.fotoDegisti && eskiFoto && eskiFoto!==r.fotoId) fotoSil(eskiFoto);
 }
 async function notSilFn(id, nid){
   const t=tanklar.find(x=>x.id===id); if(!t) return;
   const liste=notListe(t);
   const n=liste.find(x=>x.id===nid); if(!n) return;
-  const ok=await onayDialog('Notu Sil', '"'+n.m.slice(0,80)+(n.m.length>80?'…':'')+'"\n\nBu not silinecek.','Sil');
+  const ok=await onayDialog('Notu Sil', '"'+(n.m||'(fotoğraf)').slice(0,80)+((n.m||'').length>80?'…':'')+'"\n\nBu not silinecek.','Sil');
   if(!ok) return;
   t.notlar2=liste.filter(x=>x.id!==nid);
   await tankYaz(); kapat(); detay(id); toast('Not silindi');
+  if(n.foto) fotoSil(n.foto);
 }
 const KIMYASALLAR=['Meta','Sorbat','Benzoat','Riboflavin'];
 function onayDialog(baslik, detay, evetMetin){
@@ -2742,7 +2836,8 @@ function detay(id){
     <div class="sec">Notlar${notListe(t).length?` <small style="font-weight:400;color:var(--muted)">(${notListe(t).length})</small>`:''}</div>
     ${notListe(t).length
       ? notListe(t).map(n=>`<div class="notKart">
-          <div class="notMetin">${n.m.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/\n/g,'<br>')}</div>
+          <div class="notMetin">${(n.m||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/\n/g,'<br>')}</div>
+          ${n.foto?`<button type="button" class="notFotoRozet" data-notfoto="${n.foto}">📷 Fotoğraf</button>`:''}
           <div class="notAlt">
             <span>${n.k||'—'}${n.t?' · '+kisaTarih(n.t):''}${n.s?' · '+n.s:''}${n.duz?` · <i>düzenlendi ${kisaTarih(n.duz.t)}</i>`:''}</span>
             <span class="notBtn">
@@ -2758,6 +2853,9 @@ function detay(id){
       <div class="two">
         <div><label>pH</label><input type="number" step="0.01" id="o_ph" inputmode="decimal"></div>
         <div><label>Tuz %</label><input type="number" step="0.1" id="o_tuz" inputmode="decimal"></div>
+      </div>
+      <div class="two" style="margin-top:8px">
+        <div><label>Asit %</label><input type="number" step="0.01" id="o_asit" inputmode="decimal"></div>
         <div><label>°C</label><input type="number" step="0.1" id="o_sic" inputmode="decimal"></div>
       </div>
       <input id="o_not" placeholder="Köpük, koku, tuz takviyesi…" style="margin-top:10px">
@@ -2779,7 +2877,7 @@ function detay(id){
     <h3>Ölçüm geçmişi</h3>
     ${(t.olcumler||[]).length?t.olcumler.map(o=>`
       <div class="log"><span class="d">${kisaTarih(o.tarih)}</span>
-      <span class="v">pH ${o.ph||'—'} <em>·</em> Tuz ${o.tuz||'—'}${o.tuz?'%':''} <em>·</em> ${o.sicaklik||'—'}${o.sicaklik?'°':''}
+      <span class="v">pH ${o.ph||'—'} <em>·</em> Tuz ${o.tuz||'—'}${o.tuz?'%':''}${o.asit?` <em>·</em> Asit ${o.asit}%`:''} <em>·</em> ${o.sicaklik||'—'}${o.sicaklik?'°':''}
       ${o.not?`<span class="n">${o.not}</span>`:''}</span></div>`).join(''):'<p class="hint">Henüz ölçüm girilmedi.</p>'}
     ${!t.bosaltildi?(acikMi(t)
       ? `<div class="acikKart"><b>🔓 AÇIK TANK</b>
@@ -2825,6 +2923,7 @@ function detay(id){
   /* --- herkese açık: notlar --- */
   const nEk2=q('#notEkleBtn'); if(nEk2) nEk2.onclick=()=>notEkle(id);
   p.querySelectorAll('[data-notduz]').forEach(b=>b.onclick=()=>notDuzenleFn(id,b.dataset.notduz));
+  p.querySelectorAll('[data-notfoto]').forEach(b=>b.onclick=(ev)=>{ ev.stopPropagation(); fotoGoster(b.dataset.notfoto); });
   p.querySelectorAll('[data-notsil]').forEach(b=>b.onclick=()=>notSilFn(id,b.dataset.notsil));
   /* --- kayıtlı personel: boşaltma ve temizlik --- */
   const tAc=q('#tankAcBtn'); if(tAc) tAc.onclick=()=>tankAc(id);
@@ -2849,8 +2948,8 @@ function detay(id){
   if(!yonetici) return;
   if(!t.bosaltildi){
     q('#o_kaydet').onclick=async()=>{
-      const o={tarih:bugunISO(),ph:q('#o_ph').value,tuz:q('#o_tuz').value,sicaklik:q('#o_sic').value,not:q('#o_not').value.trim()};
-      if(!o.ph&&!o.tuz&&!o.sicaklik&&!o.not) return;
+      const o={tarih:bugunISO(),ph:q('#o_ph').value,tuz:q('#o_tuz').value,asit:q('#o_asit').value,sicaklik:q('#o_sic').value,not:q('#o_not').value.trim()};
+      if(!o.ph&&!o.tuz&&!o.asit&&!o.sicaklik&&!o.not) return;
       (t.olcumler=t.olcumler||[]).unshift(o);
       await tankYaz(); detay(id); toast('Ölçüm kaydedildi');
     };
@@ -3844,13 +3943,14 @@ function cizTankIsEmri(kod){
       <h3>Son Ölçümler<small>görüntüleme</small></h3>
       ${t.olcumler.slice(0,3).map(o=>`
         <div class="log"><span class="d">${kisaTarih(o.tarih)}</span>
-        <span class="v">pH ${o.ph||'—'} <em>·</em> Tuz ${o.tuz||'—'}${o.tuz?'%':''} <em>·</em> ${o.sicaklik||'—'}${o.sicaklik?'°':''}
+        <span class="v">pH ${o.ph||'—'} <em>·</em> Tuz ${o.tuz||'—'}${o.tuz?'%':''}${o.asit?` <em>·</em> Asit ${o.asit}%`:''} <em>·</em> ${o.sicaklik||'—'}${o.sicaklik?'°':''}
         ${o.not?`<span class="n">${o.not}</span>`:''}</span></div>`).join('')}
     </div>`:''}
     <div class="grup">
       <h3>Notlar<small>${notListe(t).length||'yok'}</small></h3>
       ${notListe(t).length? notListe(t).slice(0,5).map(n=>`<div class="notKart">
-          <div class="notMetin">${n.m.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/\n/g,'<br>')}</div>
+          <div class="notMetin">${(n.m||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/\n/g,'<br>')}</div>
+          ${n.foto?`<button type="button" class="notFotoRozet" data-notfoto="${n.foto}">📷 Fotoğraf</button>`:''}
           <div class="notAlt"><span>${n.k||'—'}${n.t?' · '+kisaTarih(n.t):''}${n.s?' · '+n.s:''}</span>
             <span class="notBtn"><button class="notD" data-qnotduz="${n.id}">Düzenle</button>
             <button class="notS" data-qnotsil="${n.id}">Sil</button></span></div>
@@ -3910,19 +4010,25 @@ function cizTankIsEmri(kod){
       await tankYaz(); cizTankIsEmri(kod); return;
     }
     if(ev.target.closest('#qrNotEkle')){
-      const m=await notDialog(t.kod+' — Yeni Not','');
-      if(m===null||!m) return;
-      notListe(t).unshift({id:'n'+Date.now(), m, k:kullaniciAdi()||'—', t:bugunISO(), s:saatSimdi()});
+      const r=await notDialog(t.kod+' — Yeni Not','');
+      if(r===null||(!r.metin&&!r.fotoId)) return;
+      notListe(t).unshift({id:'n'+Date.now(), m:r.metin, foto:r.fotoId||null, k:kullaniciAdi()||'—', t:bugunISO(), s:saatSimdi()});
       await tankYaz(); cizTankIsEmri(kod); toast('Not eklendi'); return;
     }
+    const nf=ev.target.closest('[data-notfoto]');
+    if(nf){ fotoGoster(nf.dataset.notfoto); return; }
     const qnd=ev.target.closest('[data-qnotduz]');
     if(qnd){
       const n=notListe(t).find(x=>x.id===qnd.dataset.qnotduz); if(!n) return;
-      const m=await notDialog(t.kod+' — Notu Düzenle', n.m);
-      if(m===null) return;
-      if(!m){ toast('Not boş bırakılamaz'); return; }
-      n.m=m; n.duz={k:kullaniciAdi()||'—', t:bugunISO(), s:saatSimdi()};
-      await tankYaz(); cizTankIsEmri(kod); toast('Not güncellendi'); return;
+      const eskiFoto=n.foto;
+      const r=await notDialog(t.kod+' — Notu Düzenle', n.m, n.foto);
+      if(r===null) return;
+      if(!r.metin&&!r.fotoId){ toast('Not boş bırakılamaz'); return; }
+      n.m=r.metin; n.foto=r.fotoId||null;
+      n.duz={k:kullaniciAdi()||'—', t:bugunISO(), s:saatSimdi()};
+      await tankYaz(); cizTankIsEmri(kod); toast('Not güncellendi');
+      if(r.fotoDegisti && eskiFoto && eskiFoto!==r.fotoId) fotoSil(eskiFoto);
+      return;
     }
     const qns=ev.target.closest('[data-qnotsil]');
     if(qns){
