@@ -108,6 +108,17 @@ main{padding:8px 16px 0}
 .notD:active,.notS:active{transform:scale(.95)}
 .pill.notPill{background:#FEF3C7;color:#92400E;border-color:#FDE68A;font-weight:700}
 .pill.acikPill{background:#7C3AED;color:#fff;border-color:transparent;font-weight:700}
+.anKart{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:8px}
+.anBas{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:9px}
+.anBas b{font-family:var(--cond);font-size:17px;letter-spacing:.03em}
+.anBas span{font-size:11.5px;color:var(--muted)}
+.anDegerler{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.anDeger{background:var(--bg);border-radius:8px;padding:6px 8px;text-align:center}
+.anDeger span{display:block;font-size:11px;color:var(--muted);margin-bottom:2px}
+.anDeger b{font-size:15px;font-weight:600}
+.anDeger.anSapan{background:#FEF2F2}
+.anDeger.anSapan span,.anDeger.anSapan b{color:var(--alarm)}
+.anUyari{font-size:11.5px;color:var(--alarm);margin-top:7px;font-weight:600}
 .pill.numBekPill{background:#EDE9FE;color:#5B21B6;border-color:#DDD6FE;font-weight:700}
 .pill.numAlPill{background:#F5F3FF;color:#6D28D9;border-color:#DDD6FE}
 .numKart{background:#F5F3FF;border:1px solid #C4B5FD;border-radius:12px;padding:10px 12px;margin-bottom:9px}
@@ -420,6 +431,7 @@ textarea{min-height:110px;resize:vertical;font-family:ui-monospace,monospace;fon
   <button data-v="isemri"><b>📋</b>İş Emri</button>
   <button data-v="tanklar"><b>🛢️</b>Tanklar</button>
   <button data-v="ozet"><b>📊</b>Özet</button>
+  <button data-v="analiz"><b>🧪</b>Analiz</button>
   <button data-v="program"><b>⚙️</b>Program</button>
 </nav>
 
@@ -511,7 +523,7 @@ function revYaz(){
     fbIstek('/'+encodeURIComponent(K_REV)+'.json',{method:'PUT', body:JSON.stringify(v)}).catch(()=>{});
   }catch(e){}
 }
-const SURUM='10.08.2026 17:05';
+const SURUM='10.08.2026 18:31';
 let urunHedef={};
 const K_PERSONEL='tanktakip:personel', K_AD_KILIT='tanktakip:cihazKilit';
 /* v3 anahtarları: eski sürümlü cihazlar (eski önbellekli bilgisayar/telefon)
@@ -1480,6 +1492,7 @@ function ciz(){
   if(gorunum==='tanklar') cizTanklar();
   else if(gorunum==='isemri') cizIsEmri();
   else if(gorunum==='ozet') cizOzet();
+  else if(gorunum==='analiz') cizAnaliz();
   else cizProgram();
 }
 
@@ -2419,6 +2432,98 @@ async function programSablonYukle(dosya){
   cizProgram();
   toast(satirSay+' gün yüklendi');
 }
+/* ---------- ANALİZ (deneme) ---------- */
+const NUMUNE_NORMAL_VARSAYILAN = {ph:[3.4,4.2], tuz:[5.0,7.5], asit:[0.5,1.2]};
+function numuneNormal(){
+  try{ const s=localStorage.getItem('tanktakip:numuneNormal'); if(s) return JSON.parse(s); }catch(e){}
+  return NUMUNE_NORMAL_VARSAYILAN;
+}
+function sonNumune(t){ const l=numuneListe(t); return l.length? l[0] : null; }
+function numuneSapmaVar(m){
+  if(!m) return false;
+  const n=numuneNormal();
+  const disinda=(v,ar)=> v!=='' && v!=null && !isNaN(+v) && (+v<ar[0] || +v>ar[1]);
+  return disinda(m.ph,n.ph) || disinda(m.tuz,n.tuz) || disinda(m.asit,n.asit);
+}
+let anUrun='hepsi', anSirala='sapma';
+function cizAnaliz(){
+  const e=document.getElementById('ekran');
+  document.getElementById('hdr').innerHTML=`
+    <div class="top"><h1>🧪 Analiz <span style="font-size:11px;font-weight:400;color:var(--muted)">(deneme)</span></h1>
+      <button class="icon" id="btnKilit">${yonetici?'🔓':'🔒'}</button></div>`;
+  document.getElementById('btnKilit').onclick=yoneticiGirisi;
+
+  const numUrunTanklari = tanklar.filter(t=>!t.bosaltildi && numuneUrunKapsaminda(t));
+  const numluTanklar = numUrunTanklari.filter(t=>numuneSayi(t)>0);
+  const numsuzTanklar = numUrunTanklari.filter(t=>numuneSayi(t)===0);
+  const urunAdlari=[...new Set(numluTanklar.map(t=>t.urun||'—'))].sort();
+
+  const kayitlar = numluTanklar.map(t=>({t, m:sonNumune(t)}))
+    .filter(x=>anUrun==='hepsi' || x.t.urun===anUrun);
+
+  const degerler=(alan)=> kayitlar.map(x=>x.m[alan]).filter(v=>v!=='' && v!=null && !isNaN(+v)).map(Number);
+  const ort=(arr)=> arr.length? (arr.reduce((a,b)=>a+b,0)/arr.length) : null;
+  const ortPh=ort(degerler('ph')), ortTuz=ort(degerler('tuz')), ortAsit=ort(degerler('asit'));
+  const sapanSay = kayitlar.filter(x=>numuneSapmaVar(x.m)).length;
+
+  const sirali=kayitlar.slice().sort((a,b)=>{
+    if(anSirala==='sapma') return (numuneSapmaVar(b.m)?1:0)-(numuneSapmaVar(a.m)?1:0) || b.t.kod.localeCompare(a.t.kod,'tr',{numeric:true});
+    if(anSirala==='ph') return (+b.m.ph||-99)-(+a.m.ph||-99);
+    if(anSirala==='tuz') return (+b.m.tuz||-99)-(+a.m.tuz||-99);
+    if(anSirala==='asit') return (+b.m.asit||-99)-(+a.m.asit||-99);
+    return a.t.kod.localeCompare(b.t.kod,'tr',{numeric:true});
+  });
+
+  const n=numuneNormal();
+  const rozet=(alan,v,birim)=>{
+    if(v==='' || v==null) return `<div class="anDeger"><span>${alan}</span><b>—</b></div>`;
+    const sapti = !isNaN(+v) && (+v<n[alan.toLocaleLowerCase('tr')][0] || +v>n[alan.toLocaleLowerCase('tr')][1]);
+    return `<div class="anDeger${sapti?' anSapan':''}"><span>${alan}</span><b>${v}${birim}</b></div>`;
+  };
+
+  e.innerHTML = `
+    <div class="dstat">
+      <div class="dkart"><span>Ortalama pH</span><b>${ortPh!=null?ortPh.toFixed(2):'—'}</b></div>
+      <div class="dkart"><span>Ortalama Tuz</span><b>${ortTuz!=null?ortTuz.toFixed(1)+'%':'—'}</b></div>
+    </div>
+    <p class="hint" style="margin-top:6px">
+      ${kayitlar.length} tank numunelendi${sapanSay?` · <b style="color:var(--alarm)">${sapanSay} tank normal aralık dışında</b>`:' · hepsi normal aralıkta'}
+      ${numsuzTanklar.length?` · <a href="#" id="anNumsuzGit" style="color:var(--mavi)">ayrıca ${numsuzTanklar.length} tankta hiç numune yok →</a>`:''}
+    </p>
+    <div class="chips" id="anUrunChips" style="margin-top:10px">
+      <button class="chip" data-au="hepsi" aria-pressed="${anUrun==='hepsi'}">Tümü<b>${kayitlar.length}</b></button>
+      ${urunAdlari.map(u=>`<button class="chip" data-au="${u}" aria-pressed="${anUrun===u}">${u}<b>${numluTanklar.filter(t=>t.urun===u).length}</b></button>`).join('')}
+    </div>
+    <div class="chips" id="anSiralaChips" style="margin-top:8px">
+      ${[['sapma','⚠ Sapanlar önce'],['ph','pH'],['tuz','Tuz'],['asit','Asit'],['kod','Tank kodu']].map(([k,ad])=>
+        `<button class="chip" data-as="${k}" aria-pressed="${anSirala===k}">${ad}</button>`).join('')}
+    </div>
+    ${!sirali.length?'<p class="hint" style="margin-top:16px">Bu filtrede numunelenmiş tank yok.</p>':
+      sirali.slice(0,60).map(({t,m})=>`
+      <div class="anKart">
+        <div class="anBas"><b>${t.kod}</b><span>${kisaTarih(m.tarih)} · ${m.gun||gun(t)}. gün</span></div>
+        <div class="anDegerler">
+          ${rozet('pH', m.ph, '')}
+          ${rozet('Tuz', m.tuz, '%')}
+          ${rozet('Asit', m.asit, '%')}
+        </div>
+        ${numuneSapmaVar(m)?`<div class="anUyari"><span>⚠</span> normal aralık dışında</div>`:''}
+        <button class="btn ghost anTekrarBtn" data-antekrar="${t.id}" style="margin-top:8px">🔁 Tekrar Numune Al</button>
+      </div>`).join('')}
+    ${sirali.length>60?`<p class="hint">… ve ${sirali.length-60} tank daha</p>`:''}
+  `;
+  document.querySelectorAll('#anUrunChips .chip').forEach(b=>b.onclick=()=>{ anUrun=b.dataset.au; cizAnaliz(); });
+  document.querySelectorAll('#anSiralaChips .chip').forEach(b=>b.onclick=()=>{ anSirala=b.dataset.as; cizAnaliz(); });
+  const ng=document.getElementById('anNumsuzGit');
+  if(ng) ng.onclick=(ev)=>{ ev.preventDefault(); gorunum='isemri'; ieGorev='NUMUNE'; ciz(); };
+  document.querySelectorAll('.anTekrarBtn').forEach(b=>b.onclick=async()=>{
+    if(!onayYetkisi()) return;
+    const id=b.dataset.antekrar; const t=tanklar.find(x=>x.id===id); if(!t) return;
+    const d=await numuneDialog(t.kod+' — Yeni Numune ('+gun(t)+'. gün)');
+    if(d===null) return;
+    await numuneEkle(id, d); cizAnaliz(); toast(t.kod+' numune kaydedildi');
+  });
+}
 function cizProgram(){
   const us=urunler();
   if(!progUrun||!us.includes(progUrun)) progUrun=us[0];
@@ -3275,6 +3380,8 @@ function detay(id){
   q('#sil').onclick=async()=>{
     if(!confirm(t.kod+' ve tüm ölçümleri silinsin mi?')) return;
     silinenler.add(id); setKaydet(K_SILINEN,silinenler);
+    const notFotolari=(numuneListe(t)||[]).length?[]:[];   // numunede foto yok, ileride eklenebilir
+    (t.notlar2||[]).forEach(n=>{ if(n.foto) fotoSil(n.foto); });
     tanklar=tanklar.filter(x=>x.id!==id); await tankYaz(); kapat(); ciz();
   };
 }
