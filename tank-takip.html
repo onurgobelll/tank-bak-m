@@ -108,6 +108,15 @@ main{padding:8px 16px 0}
 .notD:active,.notS:active{transform:scale(.95)}
 .pill.notPill{background:#FEF3C7;color:#92400E;border-color:#FDE68A;font-weight:700}
 .pill.acikPill{background:#7C3AED;color:#fff;border-color:transparent;font-weight:700}
+.pill.numBekPill{background:#EDE9FE;color:#5B21B6;border-color:#DDD6FE;font-weight:700}
+.pill.numAlPill{background:#F5F3FF;color:#6D28D9;border-color:#DDD6FE}
+.numKart{background:#F5F3FF;border:1px solid #C4B5FD;border-radius:12px;padding:10px 12px;margin-bottom:9px}
+.numKart b{font-family:var(--cond);font-size:18px;letter-spacing:.04em;color:#5B21B6}
+.numKart span{display:block;font-size:11.5px;color:#6D28D9;margin-top:2px}
+.chip.chipNum{border-color:#DDD6FE;color:#5B21B6}
+.chip.chipNum b{color:#7C3AED}
+.chip.chipNum[aria-pressed="true"]{background:#7C3AED;color:#fff;border-color:transparent}
+.chip.chipNum[aria-pressed="true"] b{color:#fff}
 .notTankKart{background:#FFFBEB;border:1px solid #FDE68A;border-radius:12px;padding:10px 12px;margin-bottom:8px;cursor:pointer}
 .notTankKart:active{transform:scale(.99)}
 .ntBas{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
@@ -180,6 +189,7 @@ main{padding:8px 16px 0}
 .tags{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 2px}
 .tag{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:8px 14px 7px;
   font-family:var(--cond);font-size:15px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.tag.tagAktif{background:#7C3AED;color:#fff;border-color:transparent;font-weight:700}
 .tag[aria-pressed="true"]{background:linear-gradient(135deg,var(--mavi),var(--mavi2));color:#fff;border-color:transparent;font-weight:600}
 .tuzgrid{display:grid;grid-template-columns:repeat(5,1fr);gap:7px;margin-top:8px}
 .tuzgrid label{margin:0 0 3px;font-size:13px}
@@ -450,6 +460,8 @@ async function fbIstek(yol, opt){
   throw sonHata||new Error('bağlantı yok');
 }
 const K_HEDEF='tanktakip:urunHedef';
+const K_NUMUNE_AYAR='tanktakip:numuneAyar';   // {urunler:[...], esik:N} — bulutta, tüm cihazlarda ortak
+let numuneAyar = {urunler:null, esik:null};   // null = henüz bulutdan gelmedi, varsayılan kullan
 const K_URUNES='tanktakip:urunEslesme';
 const K_YEDEK='tanktakip:yedekTank';
 const K_YEDEK_TARIH='tanktakip:yedekSonTarih';
@@ -498,7 +510,7 @@ function revYaz(){
     fbIstek('/'+encodeURIComponent(K_REV)+'.json',{method:'PUT', body:JSON.stringify(v)}).catch(()=>{});
   }catch(e){}
 }
-const SURUM='09.08.2026 16:07';
+const SURUM='10.08.2026 09:22';
 let urunHedef={};
 const K_PERSONEL='tanktakip:personel', K_AD_KILIT='tanktakip:cihazKilit';
 /* v3 anahtarları: eski sürümlü cihazlar (eski önbellekli bilgisayar/telefon)
@@ -903,6 +915,8 @@ function canliSenkronBaslat(){
     if(uh!==undefined){ const uhC=nesneCoz(uh)||{}; if(JSON.stringify(uhC)!==JSON.stringify(urunHedef)){ urunHedef=uhC; degisti=true; } }
     const ue=await fbGet(K_URUNES);
     if(ue!==undefined){ const ueC=eslesmeCoz(ue); if(JSON.stringify(ueC)!==JSON.stringify(urunEslesme)){ urunEslesme=ueC; degisti=true; } }
+    const na=await fbGet(K_NUMUNE_AYAR);
+    if(na && typeof na==='object' && JSON.stringify(na)!==JSON.stringify(numuneAyar)){ numuneAyar=na; degisti=true; }
     if(t!==undefined){
       t.forEach(x=>{ if(x.kod){ const y=kodDuzelt(x.kod); if(y!==x.kod) x.kod=y; } });
       if(JSON.stringify(t)!==JSON.stringify(tanklar)){ tanklar=t; degisti=true; }
@@ -1114,7 +1128,7 @@ function notDialog(baslik, mevcutMetin, mevcutFotoId){
         <p class="ob">${baslik}</p>
         <textarea id="ndIn" rows="4" placeholder="Örn: Üst kısımda köpürme var, 2 gün sonra tekrar bak"></textarea>
         <div id="ndFotoAlan" style="margin-top:10px"></div>
-        <input type="file" id="ndDosya" accept="image/*" capture="environment" style="display:none">
+        <input type="file" id="ndDosya" accept="image/*" style="display:none">
         <button class="btn ghost" id="ndFotoBtn" style="margin-top:8px;width:100%">📷 Fotoğraf Ekle</button>
         <div class="two" style="margin-top:14px">
           <button class="btn ghost" id="ndIptal">İptal</button>
@@ -1327,6 +1341,54 @@ function isEmriUret(tarih){
   return out;
 }
 
+/* ---- NUMUNE ALMA ----
+   Programdan bağımsız: gün sayısı eşiği geçen HER aktif tanktan numune
+   istenir (ürün fark etmez). Tank başına t.numune = {tarih, gun, kisi, saat} */
+const NUMUNE_ESIK_VARSAYILAN = 10;
+function numuneEsigi(){
+  if(numuneAyar.esik!=null) return numuneAyar.esik;
+  return NUMUNE_ESIK_VARSAYILAN;
+}
+/* Numune alınacak ÜRÜNLER — varsayılan: sadece Salatalık serisi.
+   Program → Ayarlar'dan değiştirilebilir. Kavanozluk gibi bağlı ürünler
+   kendi programUrun() kökü Salatalık'a bağlıysa otomatik dahil olur. */
+const NUMUNE_URUN_VARSAYILAN = ['Salatalık No.1','Salatalık No.2','Salatalık No.3'];
+function numuneUrunleri(){
+  if(Array.isArray(numuneAyar.urunler)) return numuneAyar.urunler;
+  return NUMUNE_URUN_VARSAYILAN.slice();
+}
+async function numuneAyarKaydet(){
+  await fbSet(K_NUMUNE_AYAR, numuneAyar);
+}
+function numuneUrunKapsaminda(t){
+  const liste=numuneUrunleri();
+  if(!liste.length) return true;             // liste boşsa hepsi kapsamda
+  const kok = programUrun(t.urun) || t.urun;  // Kavanozluk No.2 -> Salatalık No.2
+  return liste.includes(t.urun) || liste.includes(kok);
+}
+function numuneGerekliMi(t){
+  if(t.bosaltildi || t.kapatildi) return false;
+  if(!numuneUrunKapsaminda(t)) return false;
+  return gun(t) >= numuneEsigi();
+}
+function numuneAlinmisMi(t){ return !!t.numune; }
+/* Numune bekleyen tanklar: eşiği geçmiş, henüz alınmamış */
+function numuneBekleyenler(){
+  return tanklar.filter(t=>numuneGerekliMi(t) && !numuneAlinmisMi(t))
+    .sort((a,b)=>gun(b)-gun(a));   // en çok bekleyen önce
+}
+async function numuneIsaretle(id){
+  const t=tanklar.find(x=>x.id===id); if(!t) return;
+  if(!onayYetkisi()) return;
+  t.numune={tarih:bugunISO(), gun:gun(t), kisi:kullaniciAdi()||'—', saat:saatSimdi()};
+  await tankYaz();
+}
+async function numuneGeriAl(id){
+  const t=tanklar.find(x=>x.id===id); if(!t) return;
+  if(!onayYetkisi()) return;
+  delete t.numune;
+  await tankYaz();
+}
 function gecikenIsler(bugunTarih, gunGeri){
   const out=[];
   for(let i=1;i<=gunGeri;i++){
@@ -1768,7 +1830,7 @@ function cizTanklar(){
   });
   const kgToplam=toplamKg();
   document.getElementById('hdr').innerHTML=`
-    <div class="top"><h1>🧪 Tanklar</h1><button class="icon" id="btnOkut">Okut</button>${yonetici?'<button class="icon" id="btnQR">QR</button><button class="icon" id="btnHizli">Hızlı Ekle</button><button class="icon" id="btnExcel">📊 Excel</button>'+(veriYuklendi?'':'<button class="icon" id="btnVeri">Veri Yükle</button>')+'<button class="icon" id="btnYedek">Yedek</button>':''}<button class="icon" id="btnKilit">${yonetici?'🔓':'🔒'}</button></div>
+    <div class="top"><h1>🧪 Tanklar</h1><button class="icon" id="btnOkut">Okut</button>${yonetici?'<button class="icon" id="btnQR">QR</button><button class="icon" id="btnHizli">Hızlı Ekle</button><button class="icon" id="btnExcel">📊 Excel</button><button class="icon" id="btnAnaliz">🧪 Analiz</button>'+(veriYuklendi?'':'<button class="icon" id="btnVeri">Veri Yükle</button>')+'<button class="icon" id="btnYedek">Yedek</button>':''}<button class="icon" id="btnKilit">${yonetici?'🔓':'🔒'}</button></div>
     <input id="ara" placeholder="Tank ara: A-14, biber…" value="${arama}" autocomplete="off">
     <div class="chips">${[['hepsi','Aktif'],['notlu','📝 Notlu'],['acik','🔓 Açık'],['erken','⬇ Erken'],['hazir','Hazır'],['bugun','📅 Bugün Kapanacak'],['yakin','Yaklaşan'],['gecti','Geçen'],['dip','🧽 Temizlenecek'],['temiz','✓ Temiz']]
       .map(([k,ad])=>`<button class="chip" data-f="${k}" aria-pressed="${filtre===k}">${ad}<b>${say[k]||0}</b></button>`).join('')}`;
@@ -1779,6 +1841,7 @@ function cizTanklar(){
     if(!veriYuklendi){ document.getElementById('btnVeri').onclick=gercekVeriYukle; }
     document.getElementById('btnHizli').onclick=hizliEkle;
     const bx=document.getElementById('btnExcel'); if(bx) bx.onclick=excelYukle;
+    const ba=document.getElementById('btnAnaliz'); if(ba) ba.onclick=analizYukle;
     document.getElementById('btnQR').onclick=qrOlustur;
   }
   document.getElementById('ara').oninput=e=>{ arama=e.target.value; tankListesiCiz(); };
@@ -1824,6 +1887,8 @@ function tankListesiCiz(){
           <span class="pill ${SINIF[d]}">${ETIKET[d]}</span>
           <span class="pill">${g}/${t.hedefGun} gün</span>
           ${acikMi(t)?`<span class="pill acikPill">🔓 AÇIK${kalanKg(t)!=null?' · '+kalanKg(t)+' kg':''}</span>`:''}
+          ${(numuneGerekliMi(t)&&!numuneAlinmisMi(t))?`<span class="pill numBekPill">🧪 Numune Bekliyor</span>`:''}
+          ${numuneAlinmisMi(t)?`<span class="pill numAlPill">🧪 Numune Alındı ${kisaTarih(t.numune.tarih)}</span>`:''}
           ${notSayi(t)?`<span class="pill notPill">📝 ${notSayi(t)}</span>`:''}
         </div>
         ${son?`<div class="olcumGrid">
@@ -1865,9 +1930,10 @@ function cizIsEmri(){
   const gecikKodlar=new Set(gecikTumu.map(x=>x.gorev));
   const gecikVar=k=> k==='DEV' ? DEVIR_KODLARI.some(d=>gecikKodlar.has(d)) : gecikKodlar.has(k);
   if(ieGorev==='GEC'){ if(!gecikTumu.length) ieGorev='hepsi'; }
+  else if(ieGorev==='NUMUNE'){ if(!numuneBekleyenler().length) ieGorev='hepsi'; }
   else if(ieGorev!=='hepsi' && !grupHepsi[ieGorev] && !gecikVar(ieGorev)) ieGorev='hepsi';
   let grup = ieGorev==='hepsi' ? grupHepsi
-           : ieGorev==='GEC'   ? {}
+           : (ieGorev==='GEC'||ieGorev==='NUMUNE') ? {}
            : (grupHepsi[ieGorev] ? {[ieGorev]:grupHepsi[ieGorev]} : {});
   // devirdaim kodlarını (D/D2/DV) tek başlık altında birleştir
   const devVar=DEVIR_KODLARI.filter(k=>grup[k]);
@@ -1914,10 +1980,14 @@ function cizIsEmri(){
       const gecC = gecTop
         ? `<button class="chip chipGec" data-g="GEC" aria-pressed="${ieGorev==='GEC'}">⏰ Geciken İşler<b>${gecTop}</b></button>`
         : '';
-      if(!tuzC && !urunC && !gecC) return '';
+      const numBek=numuneBekleyenler().filter(t=>ieUrun==='hepsi'||(t.urun||'—')===ieUrun).length;
+      const numC = numBek
+        ? `<button class="chip chipNum" data-g="NUMUNE" aria-pressed="${ieGorev==='NUMUNE'}">🧪 Numune Bekleyen<b>${numBek}</b></button>`
+        : '';
+      if(!tuzC && !urunC && !gecC && !numC) return '';
       return `<div class="chips gorevChips" id="ieGorevChips">
         <button class="chip" data-g="hepsi" aria-pressed="${ieGorev==='hepsi'}">Tüm işler</button>
-        ${gecC}${tuzC}${urunC}
+        ${numC}${gecC}${tuzC}${urunC}
       </div>`;
     })()}`;
   if(document.getElementById('ieChips')){
@@ -1957,6 +2027,11 @@ function cizIsEmri(){
         ? `<div><span>Geciken</span><b style="color:var(--alarm)">${gecikenler.length}</b></div>
            <div><span>Tank</span><b>${new Set(gecikenler.map(x=>x.t.id)).size}</b></div>
            <div><span>Tuz</span><b>${gecikenler.reduce((n,x)=>n+(x.gorev==='T'?(x.tuzKg||0):0),0)||'—'}${gecikenler.some(x=>x.gorev==='T')?' kg':''}</b></div>`
+        : ieGorev==='NUMUNE'
+        ? (()=>{ const nb=numuneBekleyenler().filter(t=>ieUrun==='hepsi'||(t.urun||'—')===ieUrun);
+            return `<div><span>Numune Bekleyen</span><b style="color:#7C3AED">${nb.length}</b></div>
+              <div><span>${numuneEsigi()}+ gün</span><b>${nb.length?nb.length:'—'}</b></div>
+              <div><span>En eski</span><b>${nb.length?gun(nb[0])+'. gün':'—'}</b></div>`; })()
         : `<div><span>Görev</span><b>${bitti}/${toplamGorev}</b></div>
            <div><span>Tank</span><b>${liste.length}</b></div>
            <div><span>Tuz</span><b>${tuzToplam?tuzToplam+' kg':'—'}</b></div>`}
@@ -1967,9 +2042,22 @@ function cizIsEmri(){
         <span class="gecMetin"><b>${gecikTumu.length} iş geçmiş günlerden kalmış</b>Dokun ve tamamla</span>
         <span class="gecOk">›</span>
       </button>`:''}
-    ${ieGorev==='GEC' ? ''
+    ${(ieGorev==='GEC'||ieGorev==='NUMUNE') ? ''
       : (bitti>=toplamGorev?`<div class="tamamRozet">✓ Bugünün işleri tamam${ieUrun!=='hepsi'?' — '+ieUrun:''}</div>`
       :(yonetici?`<button class="btn hepsiBtn" id="hepsiOnay">Tümünü Onayla · ${toplamGorev-bitti} görev${ieUrun!=='hepsi'?' ('+ieUrun+')':''}</button>`:''))}
+    ${ieGorev==='NUMUNE' ? (()=>{
+      const nb=numuneBekleyenler().filter(t=>ieUrun==='hepsi'||(t.urun||'—')===ieUrun);
+      if(!nb.length) return '<div class="tamamRozet">✓ Numune bekleyen tank yok</div>';
+      return `<div class="grup">
+        <h3>🧪 Numune Bekleyen<small>${nb.length} tank${ieUrun!=='hepsi'?' · '+ieUrun:''}</small>
+          <button class="tumuBtn" id="numTumu">Tümünü İşaretle ✓</button></h3>
+        ${nb.map(t=>`<button class="gorev" data-numisaret="${t.id}">
+            <span class="cb"></span>
+            <span class="gk">${t.kod}</span>
+            <span class="gd"><b>${gun(t)}. gün</b> · ${t.urun||''}</span>
+          </button>`).join('')}
+      </div>`;
+    })() : ''}
     ${gecikenler.length?`
     <div class="grup gec">
       <h3 style="color:var(--alarm)">⏰ Yapılmayan İşler<small>${gecikenler.length} görev${(ieGorev!=='hepsi'&&ieGorev!=='GEC')?' · '+(ieGorev==='DEV'?'Devirdaim':(GOREV[ieGorev]||'')):''}${ieUrun!=='hepsi'?' · '+ieUrun:''}</small></h3>
@@ -2059,6 +2147,29 @@ function cizIsEmri(){
       cokluGorev=null; cokluSecim.clear();
       await isemriYaz(); cizIsEmri();
       toast(secilenler.length+' tank onaylandı');
+      return;
+    }
+    if(ev.target.closest('#numTumu')){
+      if(!onayYetkisi()) return;
+      const nb=numuneBekleyenler().filter(t=>ieUrun==='hepsi'||(t.urun||'—')===ieUrun);
+      if(!nb.length) return;
+      const ok=await onayDialog('Numune — Tümünü İşaretle',
+        nb.length+' tankın numunesi alınmış olarak işaretlenecek.','İşaretle');
+      if(!ok) return;
+      const bug=bugunISO(), kisi=kullaniciAdi()||'—', saat=saatSimdi();
+      nb.forEach(t=>{ t.numune={tarih:bug, gun:gun(t), kisi, saat}; });
+      await tankYaz(); cizIsEmri(); toast(nb.length+' tank numune alındı olarak işaretlendi');
+      return;
+    }
+    const ni=ev.target.closest('[data-numisaret]');
+    if(ni){
+      if(!onayYetkisi()) return;
+      const id=ni.dataset.numisaret;
+      const t=tanklar.find(x=>x.id===id); if(!t) return;
+      const ok=await onayDialog(t.kod+' — Numune Alındı',
+        (t.urun||'')+' · '+gun(t)+'. gün\nNumune alındı olarak işaretlensin mi?','İşaretle');
+      if(!ok) return;
+      await numuneIsaretle(id); cizIsEmri(); toast(t.kod+' numune alındı');
       return;
     }
     if(ev.target.closest('#gecUyariBtn')){
@@ -2326,7 +2437,17 @@ function cizProgram(){
   ${Object.entries(urunEslesme).map(([u,k])=>`
     <div class="log"><span class="d">↳</span><span class="v"><b>${u}</b> → ${k}
       ${yonetici?`<button class="icon" data-esKaldir="${u}" style="margin-left:8px;padding:4px 9px;font-size:11px">Kaldır</button>`:''}</span></div>`).join('')}`:''}
-  ${yonetici?`<div class="sec">Tarih Denetimi</div>
+  ${yonetici?`<div class="sec">Numune Alma Ayarları</div>
+  <div class="grafKutu">
+    <p class="hint" style="margin:0 0 8px">Hangi ürünlerde numune takip edilsin? Seçili olmayan ürünlerin tankları listede çıkmaz.</p>
+    <div class="tags" id="numUrunSec">
+      ${urunler().map(u=>`<button type="button" class="tag ${numuneUrunleri().includes(u)?'tagAktif':''}" data-numu="${u}">${u}</button>`).join('')}
+    </div>
+    <label style="margin-top:12px;display:block">Kaç gün sonra numune istensin?</label>
+    <input type="number" id="numEsikIn" value="${numuneEsigi()}" min="1" style="max-width:120px">
+    <button class="btn ghost" id="numAyarKaydet" style="margin-top:10px">Kaydet</button>
+  </div>
+  <div class="sec">Tarih Denetimi</div>
   <div class="grafKutu">
     <p class="hint" style="margin:0">Dolum tarihi şüpheli görünen tankları listeler; tek dokunuşla bugüne çekebilirsin.</p>
     <button class="btn ghost" id="tarihDenetle" style="margin-top:10px">Şüpheli Tarihleri Bul</button>
@@ -2365,6 +2486,21 @@ function cizProgram(){
     ${yonetici?`<button class="btn ghost" id="persEkle" style="margin-top:10px">+ Personel Ekle</button>`:''}
   </div>
   <p class="hint">Seri harfi = tank kodunun ilk harfi (A–E). Tuz kg değerleri ve devirdaim süreleri seriye göre uygulanır.</p>`;
+  let numUrunSecili = new Set(numuneUrunleri());
+  document.querySelectorAll('#numUrunSec .tag').forEach(b=>{
+    b.onclick=()=>{
+      const u=b.dataset.numu;
+      if(numUrunSecili.has(u)) numUrunSecili.delete(u); else numUrunSecili.add(u);
+      b.classList.toggle('tagAktif');
+    };
+  });
+  const nak=document.getElementById('numAyarKaydet');
+  if(nak) nak.onclick=async()=>{
+    numuneAyar.urunler=[...numUrunSecili];
+    numuneAyar.esik=+document.getElementById('numEsikIn').value||NUMUNE_ESIK_VARSAYILAN;
+    await numuneAyarKaydet();
+    toast('Numune ayarları tüm cihazlara kaydedildi'); ciz();
+  };
   const td=document.getElementById('tarihDenetle');
   if(td) td.onclick=()=>{
     const alan=document.getElementById('tarihSonuc');
@@ -2879,6 +3015,11 @@ function detay(id){
       <div class="log"><span class="d">${kisaTarih(o.tarih)}</span>
       <span class="v">pH ${o.ph||'—'} <em>·</em> Tuz ${o.tuz||'—'}${o.tuz?'%':''}${o.asit?` <em>·</em> Asit ${o.asit}%`:''} <em>·</em> ${o.sicaklik||'—'}${o.sicaklik?'°':''}
       ${o.not?`<span class="n">${o.not}</span>`:''}</span></div>`).join(''):'<p class="hint">Henüz ölçüm girilmedi.</p>'}
+    ${!t.bosaltildi?(numuneAlinmisMi(t)
+      ? `<div class="numKart"><b>🧪 NUMUNE ALINDI</b>
+          <span>${kisaTarih(t.numune.tarih)} · ${t.numune.gun}. gün · ${t.numune.kisi||'—'}${t.numune.saat?' · '+t.numune.saat:''}</span>
+          ${yonetici?`<button class="btn ghost" id="numGeriBtn" style="margin-top:8px">Numune İşaretini Geri Al</button>`:''}</div>`
+      : (numuneGerekliMi(t) ? `<button class="btn ghost" id="numTekBtn">🧪 Numune Alındı (${gun(t)}. gün)</button>` : '')):''}
     ${!t.bosaltildi?(acikMi(t)
       ? `<div class="acikKart"><b>🔓 AÇIK TANK</b>
           <span>${kisaTarih(t.acik.tarih)} · ${t.acik.kisi||'—'}${t.acik.saat?' · '+t.acik.saat:''}${acikGun(t)?` · ${acikGun(t)} gündür açık`:''}${t.acik.kalan!=null?` · kalan <b>${t.acik.kalan} kg</b>`:''}</span></div>
@@ -2926,6 +3067,19 @@ function detay(id){
   p.querySelectorAll('[data-notfoto]').forEach(b=>b.onclick=(ev)=>{ ev.stopPropagation(); fotoGoster(b.dataset.notfoto); });
   p.querySelectorAll('[data-notsil]').forEach(b=>b.onclick=()=>notSilFn(id,b.dataset.notsil));
   /* --- kayıtlı personel: boşaltma ve temizlik --- */
+  const numT=q('#numTekBtn');
+  if(numT) numT.onclick=async()=>{
+    if(!onayYetkisi()) return;
+    const ok=await onayDialog(t.kod+' — Numune Alındı', (t.urun||'')+' · '+gun(t)+'. gün\nNumune alındı olarak işaretlensin mi?','İşaretle');
+    if(!ok) return;
+    await numuneIsaretle(id); detay(id); toast(t.kod+' numune alındı');
+  };
+  const numG=q('#numGeriBtn');
+  if(numG) numG.onclick=async()=>{
+    const ok=await onayDialog('Numune İşaretini Geri Al','Bu tank tekrar numune bekleyen listesine döner.','Geri Al');
+    if(!ok) return;
+    await numuneGeriAl(id); detay(id); toast('Numune işareti geri alındı');
+  };
   const tAc=q('#tankAcBtn'); if(tAc) tAc.onclick=()=>tankAc(id);
   const aG=q('#acikGun'); if(aG) aG.onclick=()=>acikGuncelle(id);
   const pB=q('#pBosalt');
@@ -3393,6 +3547,119 @@ A-002;Salatalık No.2;11294;06.07.2026"></textarea>
     const m=q('#ex_metin').value;
     if(!m.trim()){ toast('Alan boş'); return; }
     excelOnizle(p, csvTumSatirlar(m.replace(/\t/g,';')));
+  };
+}
+/* ---- ANALİZ SONUÇLARI TOPLU YÜKLEME ----
+   Excel: Tank | pH | Tuz | Asit sütunları — her satır bir tanka bir ölçüm ekler. */
+function analizSatirTani(bas){
+  const sade=x=>String(x||'').toLocaleLowerCase('tr').replace(/[\s_.()%]/g,'');
+  const b=bas.map(sade);
+  const iK=b.findIndex(x=>x.includes('tank')||x.includes('kod'));
+  const iP=b.findIndex(x=>x==='ph');
+  const iT=b.findIndex(x=>x.includes('tuz'));
+  const iA=b.findIndex(x=>x.includes('asit')||x.includes('asitlik'));
+  const iS=b.findIndex(x=>x.includes('sicaklik')||x.includes('sıcaklık')||x==='c'||x==='derece');
+  const iN=b.findIndex(x=>x.includes('not')||x.includes('aciklama')||x.includes('açıklama'));
+  return {iK,iP,iT,iA,iS,iN};
+}
+function analizYukle(){
+  const p=panel(`
+    <div class="pbar"><h2>Analiz Sonuçları Yükle</h2><button class="icon" data-kapat>Kapat</button></div>
+    <p class="hint">Excel sütunları: <b>Tank</b> (zorunlu) · <b>pH</b> · <b>Tuz</b> · <b>Asit</b> — hangisi varsa okunur, sırası önemli değil. Her satır o tanka <b>bugünün tarihiyle</b> bir ölçüm olarak eklenir; mevcut ölçüm geçmişine dokunulmaz.</p>
+    <input type="file" id="an_dosya" accept=".csv,.xlsx,.xlsm,.xls,.ods,text/csv" style="margin-bottom:10px">
+    <p class="hint">Dosya seçemiyorsan Excel'de hücreleri kopyalayıp aşağıya yapıştır:</p>
+    <textarea id="an_metin" rows="5" placeholder="Tank;pH;Tuz;Asit
+A-002;3.8;6.2;0.85"></textarea>
+    <button class="btn ghost" id="an_metinOku">Yapıştırılanı Oku</button>
+    <div id="an_sonuc"></div>
+  `);
+  const q=s=>p.querySelector(s);
+  const isle=(satirlar)=>{
+    const bas=(satirlar[0]||[]).map(x=>String(x||'').trim());
+    const {iK,iP,iT,iA,iS,iN}=analizSatirTani(bas);
+    if(iK<0){
+      q('#an_sonuc').innerHTML='<p class="hint" style="color:var(--alarm)">Tank sütunu bulunamadı. Beklenen: Tank · pH · Tuz · Asit<br>Bulunan başlıklar: '+bas.join(' | ')+'</p>';
+      return;
+    }
+    if(iP<0&&iT<0&&iA<0){
+      q('#an_sonuc').innerHTML='<p class="hint" style="color:var(--alarm)">pH, Tuz veya Asit sütunlarından hiçbiri bulunamadı.</p>';
+      return;
+    }
+    const bug=bugunISO();
+    const eslesen=[], eslesmeyen=[], bosSatir=[];
+    satirlar.slice(1).forEach(r=>{
+      if(!r || !r[iK] || String(r[iK]).trim()==='') return;
+      const kodHam=String(r[iK]).trim();
+      const kod=kodBul(kodHam)||kodDuzelt(kodHam);
+      const t=aktifTankBul(kod);
+      const ph=iP>=0?String(r[iP]??'').trim():'';
+      const tuz=iT>=0?String(r[iT]??'').trim():'';
+      const asit=iA>=0?String(r[iA]??'').trim():'';
+      const sic=iS>=0?String(r[iS]??'').trim():'';
+      const not_=iN>=0?String(r[iN]??'').trim():'';
+      if(!ph&&!tuz&&!asit&&!sic&&!not_){ bosSatir.push(kod); return; }
+      if(!t){ eslesmeyen.push(kod); return; }
+      eslesen.push({t, kod:t.kod, urun:t.urun, olcum:{tarih:bug, ph, tuz, asit, sicaklik:sic, not:not_}});
+    });
+    if(!eslesen.length){
+      q('#an_sonuc').innerHTML='<p class="hint" style="color:var(--alarm)">Hiçbir satır eşleşmedi.'+(eslesmeyen.length?'<br>Bulunamayan kodlar: '+eslesmeyen.slice(0,15).join(', '):'')+'</p>';
+      return;
+    }
+    q('#an_sonuc').innerHTML=
+      '<div class="sec">Uygulanacak ('+eslesen.length+')</div>'
+      + eslesen.slice(0,40).map(x=>`<div class="log"><span class="d">${x.kod}</span><span class="v">${x.urun||'—'}
+          ${x.olcum.ph?' · pH '+x.olcum.ph:''}${x.olcum.tuz?' · Tuz '+x.olcum.tuz+'%':''}${x.olcum.asit?' · Asit '+x.olcum.asit+'%':''}${x.olcum.sicaklik?' · '+x.olcum.sicaklik+'°':''}</span></div>`).join('')
+      + (eslesen.length>40?`<p class="hint">… ve ${eslesen.length-40} tank daha</p>`:'')
+      + (eslesmeyen.length?`<p class="hint" style="color:var(--alarm)">⚠ ${eslesmeyen.length} kod tank listesinde bulunamadı: ${eslesmeyen.slice(0,10).join(', ')}</p>`:'')
+      + (bosSatir.length?`<p class="hint">${bosSatir.length} satırda değer yok, atlandı.</p>`:'')
+      + '<button class="btn" id="an_uygula" style="margin-top:10px">'+eslesen.length+' Tanka Ölçüm Ekle</button>';
+    q('#an_uygula').onclick=async()=>{
+      const ok=await onayDialog('Analiz Sonuçlarını Ekle',
+        eslesen.length+' tanka bugünün tarihiyle (${bug}) ölçüm eklenecek.\nMevcut ölçüm geçmişi silinmez.'.replace('${bug}',kisaTarih(bug)),'Ekle');
+      if(!ok) return;
+      window.__analizOnceki=JSON.parse(JSON.stringify(tanklar));
+      eslesen.forEach(x=>{ (x.t.olcumler=x.t.olcumler||[]).unshift(x.olcum); });
+      await tankYaz();
+      q('#an_sonuc').innerHTML='<p class="hint" style="color:var(--yesil)">✓ '+eslesen.length+' tanka ölçüm eklendi.</p>'
+        + '<button class="btn ghost" id="an_geri" style="margin-top:8px">Geri Al</button>';
+      q('#an_geri').onclick=async()=>{
+        if(!window.__analizOnceki) return;
+        tanklar=window.__analizOnceki; await tankYaz(); kapat(); ciz(); toast('Analiz yüklemesi geri alındı');
+      };
+      toast(eslesen.length+' tanka ölçüm eklendi');
+    };
+  };
+  q('#an_dosya').onchange=async e=>{
+    const f=e.target.files[0]; if(!f) return;
+    const ad=f.name.toLocaleLowerCase('tr');
+    try{
+      if(/\.(xlsx|xlsm|xls|ods)$/.test(ad)){
+        toast('Excel okunuyor…');
+        if(!window.XLSX){
+          await new Promise((res,rej)=>{
+            const sc=document.createElement('script');
+            sc.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+            sc.onload=res; sc.onerror=()=>rej(new Error('Excel kütüphanesi indirilemedi'));
+            document.head.appendChild(sc);
+          });
+        }
+        const buf=await f.arrayBuffer();
+        const wb=XLSX.read(buf,{type:'array',cellDates:true});
+        const sh=wb.Sheets[wb.SheetNames[0]];
+        const satirlar=XLSX.utils.sheet_to_json(sh,{header:1,raw:true,defval:''});
+        isle(satirlar);
+      }else{
+        const metin=await f.text();
+        isle(csvTumSatirlar(metin));
+      }
+    }catch(err){
+      q('#an_sonuc').innerHTML='<p class="hint" style="color:var(--alarm)">Okunamadı: '+err.message+'</p>';
+    }
+  };
+  q('#an_metinOku').onclick=()=>{
+    const m=q('#an_metin').value;
+    if(!m.trim()){ toast('Alan boş'); return; }
+    isle(csvTumSatirlar(m.replace(/\t/g,';')));
   };
 }
 function excelOnizle(p, satirlar){
@@ -4181,11 +4448,12 @@ function yedek(){
     // varsayılanı yalnızca Firebase gerçekten boşsa yaz (bağlantı hatasında yazma!)
     if(progDurum.ok) await progKaydet();
   }
-  const [_is,_veri,_dev,_pers,_hedef,_esles] = await Promise.all([
+  const [_is,_veri,_dev,_pers,_hedef,_esles,_numAyar] = await Promise.all([
     sGet(K_IS,{}), sGet(K_VERI,false), sGet(K_DEV,{...DEV_VARSAYILAN}),
-    sGet(K_PERSONEL,[]), sGet(K_HEDEF,{}), sGet(K_URUNES,{})
+    sGet(K_PERSONEL,[]), sGet(K_HEDEF,{}), sGet(K_URUNES,{}), sGet(K_NUMUNE_AYAR,null)
   ]);
   isemri=_is;
+  if(_numAyar && typeof _numAyar==='object') numuneAyar=_numAyar;
   veriYuklendi=!!_veri;
   devirdaimSure=_dev;
   personel=_pers;
