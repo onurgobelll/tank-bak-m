@@ -477,17 +477,18 @@ async function surumKontrol(){
   let bulutSurum;
   try{ bulutSurum=await fbGet(K_SURUM_BULUT); }catch(e){ return; }
   const benim=surumSayi(SURUM), uzak=surumSayi(bulutSurum);
-  if(!uzak) { if(benim) fbSet(K_SURUM_BULUT, SURUM); return; }
-  if(benim>uzak){ fbSet(K_SURUM_BULUT, SURUM); return; }   // en yeni bendeyim, duyur
-  if(benim>=uzak) return;
-  /* eskiyim — sonsuz döngüye girmemek için oturumda tek deneme */
+  if(!uzak){ if(benim) fbSet(K_SURUM_BULUT, SURUM); return; }
+  if(benim>=uzak){ if(benim>uzak) fbSet(K_SURUM_BULUT, SURUM); return; }  // en yeni bendeyim (ya da eşit), sadece daha yeniysem duyur
+  /* eskiyim — sayfa yenilense de kalıcı olsun diye localStorage kullan (sessionStorage
+     bazı tarayıcılarda ?v=... ile yenilemeyi yeni oturum sayıp sıfırlanıyor, bu da
+     "güncelleniyor" mesajının sürekli tekrarlanmasına yol açıyordu) */
   let denendi=false;
-  try{ denendi=sessionStorage.getItem('tanktakip:otoGun')===String(uzak); }catch(e){}
+  try{ denendi=localStorage.getItem('tanktakip:otoGun')===String(uzak); }catch(e){}
   if(denendi){
     toast('⚠ Yeni sürüm var ('+bulutSurum+'). Program → 🔄 Güncellemeyi Zorla');
     return;
   }
-  try{ sessionStorage.setItem('tanktakip:otoGun',String(uzak)); }catch(e){}
+  try{ localStorage.setItem('tanktakip:otoGun',String(uzak)); }catch(e){}
   toast('Yeni sürüm bulundu, güncelleniyor…');
   try{
     if('caches' in window){ const ks=await caches.keys(); await Promise.all(ks.map(k=>caches.delete(k))); }
@@ -510,7 +511,7 @@ function revYaz(){
     fbIstek('/'+encodeURIComponent(K_REV)+'.json',{method:'PUT', body:JSON.stringify(v)}).catch(()=>{});
   }catch(e){}
 }
-const SURUM='10.08.2026 09:22';
+const SURUM='10.08.2026 17:05';
 let urunHedef={};
 const K_PERSONEL='tanktakip:personel', K_AD_KILIT='tanktakip:cihazKilit';
 /* v3 anahtarları: eski sürümlü cihazlar (eski önbellekli bilgisayar/telefon)
@@ -1119,6 +1120,44 @@ async function fotoGoster(fotoId){
   if(!ov.isConnected) return;
   ov.innerHTML = url ? `<img src="${url}">` : '<div class="fotoYukleniyor">Fotoğraf yüklenemedi</div>';
 }
+/* Numune değeri girme penceresi: pH / Tuz / Asit / not. Boş bırakılabilir,
+   sonradan da girilebilir — "numune alındı" ile "değerleri gir" ayrı adımlar. */
+function numuneDialog(baslik, mevcut){
+  return new Promise(resolve=>{
+    const m=mevcut||{};
+    const ov=document.createElement('div');
+    ov.className='onayOverlay';
+    ov.innerHTML=`
+      <div class="onayKutu">
+        <p class="ob">${baslik}</p>
+        <p class="hint" style="margin:0 0 10px">Değerleri biliyorsan gir, bilmiyorsan boş bırakıp sonra tamamlayabilirsin.</p>
+        <div class="two">
+          <div><label>pH</label><input type="number" step="0.01" id="nmPh" inputmode="decimal" value="${m.ph||''}"></div>
+          <div><label>Tuz %</label><input type="number" step="0.1" id="nmTuz" inputmode="decimal" value="${m.tuz||''}"></div>
+        </div>
+        <div class="two" style="margin-top:8px">
+          <div><label>Asit %</label><input type="number" step="0.01" id="nmAsit" inputmode="decimal" value="${m.asit||''}"></div>
+          <div></div>
+        </div>
+        <label style="margin-top:8px;display:block">Not</label>
+        <textarea id="nmNot" rows="2" placeholder="İsteğe bağlı">${m.not||''}</textarea>
+        <div class="two" style="margin-top:14px">
+          <button class="btn ghost" id="nmIptal">İptal</button>
+          <button class="btn" id="nmTamam">Kaydet</button>
+        </div>
+      </div>`;
+    document.body.appendChild(ov);
+    const bitir=v=>{ ov.remove(); resolve(v); };
+    ov.querySelector('#nmIptal').onclick=()=>bitir(null);
+    ov.querySelector('#nmTamam').onclick=()=>bitir({
+      ph:ov.querySelector('#nmPh').value.trim(),
+      tuz:ov.querySelector('#nmTuz').value.trim(),
+      asit:ov.querySelector('#nmAsit').value.trim(),
+      not:ov.querySelector('#nmNot').value.trim()
+    });
+    ov.onclick=e=>{ if(e.target===ov) bitir(null); };
+  });
+}
 function notDialog(baslik, mevcutMetin, mevcutFotoId){
   return new Promise(resolve=>{
     const ov=document.createElement('div');
@@ -1366,27 +1405,53 @@ function numuneUrunKapsaminda(t){
   const kok = programUrun(t.urun) || t.urun;  // Kavanozluk No.2 -> Salatalık No.2
   return liste.includes(t.urun) || liste.includes(kok);
 }
+/* Havası kesilmiş (kapatılmış) tank da numune bekleyebilir — iş bitse bile
+   ürünün ömrü boyunca EN AZ BİR numune alınmış olması gerekiyor.
+   Sadece boşaltılmış (dip/temiz) tanklar numune dışında kalır. */
 function numuneGerekliMi(t){
-  if(t.bosaltildi || t.kapatildi) return false;
+  if(t.bosaltildi) return false;
   if(!numuneUrunKapsaminda(t)) return false;
   return gun(t) >= numuneEsigi();
 }
-function numuneAlinmisMi(t){ return !!t.numune; }
-/* Numune bekleyen tanklar: eşiği geçmiş, henüz alınmamış */
+/* Numune kaydı LİSTE — birden çok analiz tutulabilir (tarih, pH, tuz, asit, kim). */
+function numuneListe(t){
+  if(!Array.isArray(t.numune2)){
+    t.numune2=[];
+    if(t.numune && typeof t.numune==='object'){       // eski tek-kayıt alanını taşı
+      t.numune2.push({id:'m0', tarih:t.numune.tarih, gun:t.numune.gun, kisi:t.numune.kisi, saat:t.numune.saat,
+        ph:'', tuz:'', asit:'', not:''});
+      delete t.numune;
+    }
+  }
+  return t.numune2;
+}
+function numuneSayi(t){ return Array.isArray(t.numune2)? t.numune2.length : (t.numune?1:0); }
+function numuneAlinmisMi(t){ return numuneSayi(t)>0; }
+/* Numune bekleyen tanklar: eşiği geçmiş, HİÇ numune alınmamış */
 function numuneBekleyenler(){
   return tanklar.filter(t=>numuneGerekliMi(t) && !numuneAlinmisMi(t))
     .sort((a,b)=>gun(b)-gun(a));   // en çok bekleyen önce
 }
-async function numuneIsaretle(id){
+async function numuneEkle(id, deger){
   const t=tanklar.find(x=>x.id===id); if(!t) return;
   if(!onayYetkisi()) return;
-  t.numune={tarih:bugunISO(), gun:gun(t), kisi:kullaniciAdi()||'—', saat:saatSimdi()};
+  const d=deger||{};
+  numuneListe(t).unshift({id:'m'+Date.now(), tarih:bugunISO(), gun:gun(t), kisi:kullaniciAdi()||'—', saat:saatSimdi(),
+    ph:d.ph||'', tuz:d.tuz||'', asit:d.asit||'', not:d.not||''});
   await tankYaz();
 }
-async function numuneGeriAl(id){
+async function numuneDuzenle(id, mid, deger){
+  const t=tanklar.find(x=>x.id===id); if(!t) return;
+  const m=numuneListe(t).find(x=>x.id===mid); if(!m) return;
+  if(!onayYetkisi()) return;
+  Object.assign(m, {ph:deger.ph||'', tuz:deger.tuz||'', asit:deger.asit||'', not:deger.not||''});
+  m.duz={k:kullaniciAdi()||'—', t:bugunISO(), s:saatSimdi()};
+  await tankYaz();
+}
+async function numuneSil(id, mid){
   const t=tanklar.find(x=>x.id===id); if(!t) return;
   if(!onayYetkisi()) return;
-  delete t.numune;
+  t.numune2=numuneListe(t).filter(x=>x.id!==mid);
   await tankYaz();
 }
 function gecikenIsler(bugunTarih, gunGeri){
@@ -1888,7 +1953,7 @@ function tankListesiCiz(){
           <span class="pill">${g}/${t.hedefGun} gün</span>
           ${acikMi(t)?`<span class="pill acikPill">🔓 AÇIK${kalanKg(t)!=null?' · '+kalanKg(t)+' kg':''}</span>`:''}
           ${(numuneGerekliMi(t)&&!numuneAlinmisMi(t))?`<span class="pill numBekPill">🧪 Numune Bekliyor</span>`:''}
-          ${numuneAlinmisMi(t)?`<span class="pill numAlPill">🧪 Numune Alındı ${kisaTarih(t.numune.tarih)}</span>`:''}
+          ${numuneAlinmisMi(t)?`<span class="pill numAlPill">🧪 Numune ${numuneSayi(t)>1?'x'+numuneSayi(t)+' · ':''}${kisaTarih(numuneListe(t)[0].tarih)}</span>`:''}
           ${notSayi(t)?`<span class="pill notPill">📝 ${notSayi(t)}</span>`:''}
         </div>
         ${son?`<div class="olcumGrid">
@@ -2157,8 +2222,8 @@ function cizIsEmri(){
         nb.length+' tankın numunesi alınmış olarak işaretlenecek.','İşaretle');
       if(!ok) return;
       const bug=bugunISO(), kisi=kullaniciAdi()||'—', saat=saatSimdi();
-      nb.forEach(t=>{ t.numune={tarih:bug, gun:gun(t), kisi, saat}; });
-      await tankYaz(); cizIsEmri(); toast(nb.length+' tank numune alındı olarak işaretlendi');
+      nb.forEach(t=>{ numuneListe(t).unshift({id:'m'+Date.now()+'_'+t.id, tarih:bug, gun:gun(t), kisi, saat, ph:'', tuz:'', asit:'', not:''}); });
+      await tankYaz(); cizIsEmri(); toast(nb.length+' tank numune alındı olarak işaretlendi — değerleri sonra girebilirsin');
       return;
     }
     const ni=ev.target.closest('[data-numisaret]');
@@ -2166,10 +2231,9 @@ function cizIsEmri(){
       if(!onayYetkisi()) return;
       const id=ni.dataset.numisaret;
       const t=tanklar.find(x=>x.id===id); if(!t) return;
-      const ok=await onayDialog(t.kod+' — Numune Alındı',
-        (t.urun||'')+' · '+gun(t)+'. gün\nNumune alındı olarak işaretlensin mi?','İşaretle');
-      if(!ok) return;
-      await numuneIsaretle(id); cizIsEmri(); toast(t.kod+' numune alındı');
+      const d=await numuneDialog(t.kod+' — Numune Alındı ('+gun(t)+'. gün)');
+      if(d===null) return;
+      await numuneEkle(id, d); cizIsEmri(); toast(t.kod+' numune kaydedildi');
       return;
     }
     if(ev.target.closest('#gecUyariBtn')){
@@ -3015,11 +3079,21 @@ function detay(id){
       <div class="log"><span class="d">${kisaTarih(o.tarih)}</span>
       <span class="v">pH ${o.ph||'—'} <em>·</em> Tuz ${o.tuz||'—'}${o.tuz?'%':''}${o.asit?` <em>·</em> Asit ${o.asit}%`:''} <em>·</em> ${o.sicaklik||'—'}${o.sicaklik?'°':''}
       ${o.not?`<span class="n">${o.not}</span>`:''}</span></div>`).join(''):'<p class="hint">Henüz ölçüm girilmedi.</p>'}
-    ${!t.bosaltildi?(numuneAlinmisMi(t)
-      ? `<div class="numKart"><b>🧪 NUMUNE ALINDI</b>
-          <span>${kisaTarih(t.numune.tarih)} · ${t.numune.gun}. gün · ${t.numune.kisi||'—'}${t.numune.saat?' · '+t.numune.saat:''}</span>
-          ${yonetici?`<button class="btn ghost" id="numGeriBtn" style="margin-top:8px">Numune İşaretini Geri Al</button>`:''}</div>`
-      : (numuneGerekliMi(t) ? `<button class="btn ghost" id="numTekBtn">🧪 Numune Alındı (${gun(t)}. gün)</button>` : '')):''}
+    ${(numuneGerekliMi(t) || numuneSayi(t)>0)?`
+    <div class="sec">Numune / Analiz${numuneSayi(t)?` <small style="font-weight:400;color:var(--muted)">(${numuneSayi(t)})</small>`:''}</div>
+    ${numuneSayi(t)? numuneListe(t).map(m=>`
+      <div class="numKart">
+        <b>🧪 ${kisaTarih(m.tarih)}${m.gun?' · '+m.gun+'. gün':''}</b>
+        <span>${m.ph?'pH '+m.ph+' · ':''}${m.tuz?'Tuz '+m.tuz+'% · ':''}${m.asit?'Asit '+m.asit+'% · ':''}${(!m.ph&&!m.tuz&&!m.asit)?'değer girilmedi · ':''}${m.kisi||'—'}${m.saat?' · '+m.saat:''}</span>
+        ${m.not?`<span style="color:var(--ink);margin-top:4px;display:block">${m.not}</span>`:''}
+        ${m.duz?`<span style="opacity:.7">düzenlendi ${kisaTarih(m.duz.t)}</span>`:''}
+        ${yonetici?`<div style="margin-top:7px;display:flex;gap:6px">
+          <button class="notD" data-numduz="${m.id}">Düzenle</button>
+          <button class="notS" data-numsil="${m.id}">Sil</button>
+        </div>`:''}
+      </div>`).join('') : '<p class="hint">Bu tank için henüz numune alınmadı.</p>'}
+    ${!t.bosaltildi?`<button class="btn ghost" id="numTekBtn">🧪 Yeni Numune Ekle</button>`:''}
+    `:''}
     ${!t.bosaltildi?(acikMi(t)
       ? `<div class="acikKart"><b>🔓 AÇIK TANK</b>
           <span>${kisaTarih(t.acik.tarih)} · ${t.acik.kisi||'—'}${t.acik.saat?' · '+t.acik.saat:''}${acikGun(t)?` · ${acikGun(t)} gündür açık`:''}${t.acik.kalan!=null?` · kalan <b>${t.acik.kalan} kg</b>`:''}</span></div>
@@ -3070,16 +3144,24 @@ function detay(id){
   const numT=q('#numTekBtn');
   if(numT) numT.onclick=async()=>{
     if(!onayYetkisi()) return;
-    const ok=await onayDialog(t.kod+' — Numune Alındı', (t.urun||'')+' · '+gun(t)+'. gün\nNumune alındı olarak işaretlensin mi?','İşaretle');
-    if(!ok) return;
-    await numuneIsaretle(id); detay(id); toast(t.kod+' numune alındı');
+    const d=await numuneDialog(t.kod+' — Yeni Numune ('+gun(t)+'. gün)');
+    if(d===null) return;
+    await numuneEkle(id, d); kapat(); detay(id); toast(t.kod+' numune kaydedildi');
   };
-  const numG=q('#numGeriBtn');
-  if(numG) numG.onclick=async()=>{
-    const ok=await onayDialog('Numune İşaretini Geri Al','Bu tank tekrar numune bekleyen listesine döner.','Geri Al');
+  p.querySelectorAll('[data-numduz]').forEach(b=>b.onclick=async()=>{
+    if(!onayYetkisi()) return;
+    const mid=b.dataset.numduz;
+    const mevcut=numuneListe(t).find(x=>x.id===mid); if(!mevcut) return;
+    const d=await numuneDialog(t.kod+' — Numuneyi Düzenle', mevcut);
+    if(d===null) return;
+    await numuneDuzenle(id, mid, d); kapat(); detay(id); toast('Numune güncellendi');
+  });
+  p.querySelectorAll('[data-numsil]').forEach(b=>b.onclick=async()=>{
+    if(!onayYetkisi()) return;
+    const ok=await onayDialog('Numune Kaydını Sil','Bu numune kaydı silinecek.','Sil');
     if(!ok) return;
-    await numuneGeriAl(id); detay(id); toast('Numune işareti geri alındı');
-  };
+    await numuneSil(id, b.dataset.numsil); kapat(); detay(id); toast('Numune kaydı silindi');
+  });
   const tAc=q('#tankAcBtn'); if(tAc) tAc.onclick=()=>tankAc(id);
   const aG=q('#acikGun'); if(aG) aG.onclick=()=>acikGuncelle(id);
   const pB=q('#pBosalt');
@@ -3618,7 +3700,12 @@ A-002;3.8;6.2;0.85"></textarea>
         eslesen.length+' tanka bugünün tarihiyle (${bug}) ölçüm eklenecek.\nMevcut ölçüm geçmişi silinmez.'.replace('${bug}',kisaTarih(bug)),'Ekle');
       if(!ok) return;
       window.__analizOnceki=JSON.parse(JSON.stringify(tanklar));
-      eslesen.forEach(x=>{ (x.t.olcumler=x.t.olcumler||[]).unshift(x.olcum); });
+      eslesen.forEach(x=>{
+        (x.t.olcumler=x.t.olcumler||[]).unshift(x.olcum);
+        /* Excel'den analiz gelmesi = numune alınmış demektir */
+        numuneListe(x.t).unshift({id:'m'+Date.now()+'_'+x.t.id, tarih:x.olcum.tarih, gun:gun(x.t),
+          kisi:kullaniciAdi()||'—', saat:saatSimdi(), ph:x.olcum.ph||'', tuz:x.olcum.tuz||'', asit:x.olcum.asit||'', not:x.olcum.not||''});
+      });
       await tankYaz();
       q('#an_sonuc').innerHTML='<p class="hint" style="color:var(--yesil)">✓ '+eslesen.length+' tanka ölçüm eklendi.</p>'
         + '<button class="btn ghost" id="an_geri" style="margin-top:8px">Geri Al</button>';
