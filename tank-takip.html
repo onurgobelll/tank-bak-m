@@ -523,7 +523,7 @@ function revYaz(){
     fbIstek('/'+encodeURIComponent(K_REV)+'.json',{method:'PUT', body:JSON.stringify(v)}).catch(()=>{});
   }catch(e){}
 }
-const SURUM='11.08.2026 17:54';
+const SURUM='13.08.2026 10:22';
 let urunHedef={};
 const K_PERSONEL='tanktakip:personel', K_AD_KILIT='tanktakip:cihazKilit';
 /* v3 anahtarları: eski sürümlü cihazlar (eski önbellekli bilgisayar/telefon)
@@ -1048,6 +1048,8 @@ const kisaTarih=t=>{const d=new Date(t+'T00:00');return d.getDate()+'.'+(d.getMo
 const gunTarihte=(t,tar)=>gunFark(t.baslangic,tar)+1;
 const gun=t=>gunTarihte(t,t.bosaltildi||bugunISO());
 const seri=t=>(t.kod.match(/^[A-ZÇĞİÖŞÜ]/)||[''])[0];
+/* Henüz kaydedilmemiş bir kod METNİNDEN seri harfini çıkar: "A-14" -> "A" */
+const seriHarfiCikar=kod=>(String(kod||'').toLocaleUpperCase('tr').match(/^[A-ZÇĞİÖŞÜ]/)||[''])[0];
 const urunler=()=>Object.keys(program);
 function durum(t){
   if(t.bosaltildi) return t.temizlendi? 'temiz' : 'dip';
@@ -2435,7 +2437,11 @@ async function programSablonYukle(dosya){
 /* ---------- ANALİZ (deneme) ---------- */
 const NUMUNE_NORMAL_VARSAYILAN = {ph:[3.4,4.2], tuz:[5.0,7.5], asit:[0.5,1.2]};
 function numuneNormal(){
-  if(numuneAyar.normal && typeof numuneAyar.normal==='object') return numuneAyar.normal;
+  const n=numuneAyar.normal;
+  /* Bozuk/anlamsız kayıt (ör. [0,0] veya min>=maks) varsayılana düşer —
+     eski bir kayıt yüzünden her değer yanlışlıkla "sapan" görünmesin. */
+  const gecerli=(ar)=>Array.isArray(ar) && ar.length===2 && ar.every(v=>typeof v==='number'&&!isNaN(v)) && ar[0]<ar[1];
+  if(n && typeof n==='object' && gecerli(n.ph) && gecerli(n.tuz) && gecerli(n.asit)) return n;
   return NUMUNE_NORMAL_VARSAYILAN;
 }
 function sonNumune(t){ const l=numuneListe(t); return l.length? l[0] : null; }
@@ -2616,16 +2622,16 @@ function cizProgram(){
     <input type="number" id="numEsikIn" value="${numuneEsigi()}" min="1" style="max-width:120px">
     <label style="margin-top:14px;display:block">Normal aralıklar <small style="font-weight:400;color:var(--muted)">— Analiz sekmesinde bu aralığın dışı kırmızı işaretlenir</small></label>
     <div class="two" style="margin-top:6px">
-      <div><label style="font-size:12px">pH — min</label><input type="number" step="0.01" id="nnPhMin" value="${numuneNormal().ph[0]}"></div>
-      <div><label style="font-size:12px">pH — maks</label><input type="number" step="0.01" id="nnPhMax" value="${numuneNormal().ph[1]}"></div>
+      <div><label style="font-size:12px">pH — min</label><input type="text" inputmode="decimal" id="nnPhMin" value="${numuneNormal().ph[0]}"></div>
+      <div><label style="font-size:12px">pH — maks</label><input type="text" inputmode="decimal" id="nnPhMax" value="${numuneNormal().ph[1]}"></div>
     </div>
     <div class="two" style="margin-top:8px">
-      <div><label style="font-size:12px">Tuz % — min</label><input type="number" step="0.1" id="nnTuzMin" value="${numuneNormal().tuz[0]}"></div>
-      <div><label style="font-size:12px">Tuz % — maks</label><input type="number" step="0.1" id="nnTuzMax" value="${numuneNormal().tuz[1]}"></div>
+      <div><label style="font-size:12px">Tuz % — min</label><input type="text" inputmode="decimal" id="nnTuzMin" value="${numuneNormal().tuz[0]}"></div>
+      <div><label style="font-size:12px">Tuz % — maks</label><input type="text" inputmode="decimal" id="nnTuzMax" value="${numuneNormal().tuz[1]}"></div>
     </div>
     <div class="two" style="margin-top:8px">
-      <div><label style="font-size:12px">Asit % — min</label><input type="number" step="0.01" id="nnAsitMin" value="${numuneNormal().asit[0]}"></div>
-      <div><label style="font-size:12px">Asit % — maks</label><input type="number" step="0.01" id="nnAsitMax" value="${numuneNormal().asit[1]}"></div>
+      <div><label style="font-size:12px">Asit % — min</label><input type="text" inputmode="decimal" id="nnAsitMin" value="${numuneNormal().asit[0]}"></div>
+      <div><label style="font-size:12px">Asit % — maks</label><input type="text" inputmode="decimal" id="nnAsitMax" value="${numuneNormal().asit[1]}"></div>
     </div>
     <button class="btn ghost" id="numAyarKaydet" style="margin-top:10px">Kaydet</button>
   </div>
@@ -2678,12 +2684,20 @@ function cizProgram(){
   });
   const nak=document.getElementById('numAyarKaydet');
   if(nak) nak.onclick=async()=>{
-    const say=id=>+document.getElementById(id).value;
+    /* Türkçe klavye ondalık ayracı olarak virgül üretir (input type=number
+       bunu geçersiz sayıp değeri boşaltabilir) — hem inputun value'sunu hem
+       varsa yazılan ham metni virgül/nokta ikisini de kabul ederek oku. */
+    const say=id=>{
+      const el=document.getElementById(id);
+      let ham=el.value;
+      if(ham==='' && el.getAttribute('inputmode')!==null){ /* value boşaldıysa görünen metne bak */ }
+      return parseFloat(String(ham).replace(',','.'));
+    };
     const phMin=say('nnPhMin'), phMax=say('nnPhMax');
     const tuzMin=say('nnTuzMin'), tuzMax=say('nnTuzMax');
     const asitMin=say('nnAsitMin'), asitMax=say('nnAsitMax');
     if(isNaN(phMin)||isNaN(phMax)||isNaN(tuzMin)||isNaN(tuzMax)||isNaN(asitMin)||isNaN(asitMax)){
-      toast('Aralık değerlerini kontrol et'); return;
+      toast('⚠ Aralık değerlerini kontrol et — ondalık için nokta kullan (3.4 gibi)'); return;
     }
     if(phMin>=phMax||tuzMin>=tuzMax||asitMin>=asitMax){
       toast('Min değer maks değerden küçük olmalı'); return;
@@ -3037,8 +3051,9 @@ function form(id){
     <select id="f_urun">${us.map(u=>`<option ${t&&t.urun===u?'selected':''}>${u}</option>`).join('')}<option value="__yeni__">+ Yeni ürün ekle…</option></select>
     <div class="two">
       <div><label>Dolum tarihi</label><input type="date" id="f_bas" value="${t?t.baslangic:bugunISO()}"></div>
-      <div><label>Hedef gün</label><input type="number" id="f_hedef" value="${t?t.hedefGun:21}" min="1"></div>
+      <div><label>Hedef gün</label><input type="number" id="f_hedef" value="${t?t.hedefGun:''}" min="1" placeholder="ürüne göre otomatik"></div>
     </div>
+    <p class="hint" id="f_hedefIpucu" style="margin-top:-6px"></p>
     <label>Devirdaim süresi (bu tanka özel)</label>
     <input id="f_dev" value="${t&&t.devSure?t.devSure:''}" placeholder="Boş = seri varsayılanı${t?` (${devirdaimSure[seri(t)]||'—'})`:''}">
     ${t?'<p class="hint">Notlar için tank detayındaki <b>Notlar</b> bölümünü kullan — birden fazla not ekleyebilir, sonradan düzenleyebilirsin.</p>':''}
@@ -3047,6 +3062,24 @@ function form(id){
   `);
   const q=s=>p.querySelector(s);
   let mod='tek';
+  /* Yeni tank eklerken (t yok) hedef günü ürüne+seriye göre otomatik doldur.
+     Kullanıcı hedef alanını elle değiştirirse artık otomatik yazmayı bırak. */
+  let hedefElleDegisti=false;
+  q('#f_hedef').addEventListener('input', ()=>{ hedefElleDegisti=true; });
+  function hedefOtoDoldur(){
+    if(t || hedefElleDegisti) return;               // düzenleme modunda ya da elle değiştirilmişse dokunma
+    const urun=q('#f_urun').value; if(!urun||urun==='__yeni__') return;
+    const kodHam=(q('#f_kod')?q('#f_kod').value:'') || (q('#b_seri')?q('#b_seri').value:'');
+    const s=seriHarfiCikar(kodHam);
+    const hg=hedefGunHesapla(urun, s);
+    if(hg) q('#f_hedef').value=hg;
+    const ipucu=q('#f_hedefIpucu');
+    if(ipucu && hg) ipucu.textContent='Programa göre önerilen: '+hg+' gün'+(s?' ('+s+' serisi)':'');
+  }
+  const fk=q('#f_kod'); if(fk) fk.addEventListener('input', hedefOtoDoldur);
+  const bs=q('#b_seri'); if(bs) bs.addEventListener('input', hedefOtoDoldur);
+  q('#f_urun').addEventListener('change', hedefOtoDoldur);
+  hedefOtoDoldur();   // panel açılır açılmaz da bir kez dene (varsayılan ürün seçiliyse)
   q('#f_urun').onchange=async e=>{
     if(e.target.value!=='__yeni__') return;
     const ad=(prompt('Yeni ürün adı:')||'').trim();
@@ -3064,23 +3097,28 @@ function form(id){
     q('#m2').onclick=()=>{mod='toplu';q('#m2').setAttribute('aria-pressed','true');q('#m1').setAttribute('aria-pressed','false');q('#toplu').style.display='';q('#tek').style.display='none';};
   }
   q('#f_kaydet').onclick=async()=>{
+    const secilenUrun=q('#f_urun').value;
     const ortak={
-      urun:q('#f_urun').value,
+      urun:secilenUrun,
       baslangic:q('#f_bas').value||bugunISO(),
-      hedefGun:+q('#f_hedef').value||21,
+      hedefGun:+q('#f_hedef').value || hedefGunHesapla(secilenUrun, seriHarfiCikar(q('#f_kod')?q('#f_kod').value:'')) || 21,
       devSure:q('#f_dev').value.trim()
     };
     if(mod==='toplu'){
       const sr=q('#b_seri').value.trim().toUpperCase();
       const b=+q('#b_bas').value, s=+q('#b_son').value, kap=q('#b_kap').value.trim().toUpperCase();
       if(!sr||!(s>=b)){ toast('Seri ve numaraları kontrol et'); return; }
+      /* toplu eklemede hedef gün alanı elle değiştirilmediyse, her tank kendi serisine göre hesaplansın */
+      const topluHedef = hedefElleDegisti ? (+q('#f_hedef').value||null) : null;
       let n=0;
       for(let i=b;i<=s;i++){
         const kod=kodDuzelt(sr+'-'+i);
+        const buHedef = topluHedef || hedefGunHesapla(secilenUrun, sr) || ortak.hedefGun;
+        const ortakBu = {...ortak, hedefGun:buHedef};
         if(tanklar.some(x=>kodNormal(x.kod)===kodNormal(kod)&&!x.bosaltildi)) continue;
         const bosTank=tanklar.find(x=>kodNormal(x.kod)===kodNormal(kod)&&x.bosaltildi);
-        if(bosTank){ dolumYaz(bosTank,{kod,kapasite:kap,...ortak},false); }
-        else tanklar.push({id:'t'+Date.now()+'_'+i,kod,kapasite:kap,...ortak,bosaltildi:'',olcumler:[],kimyasallar:[]});
+        if(bosTank){ dolumYaz(bosTank,{kod,kapasite:kap,...ortakBu},false); }
+        else tanklar.push({id:'t'+Date.now()+'_'+i,kod,kapasite:kap,...ortakBu,bosaltildi:'',olcumler:[],kimyasallar:[]});
         n++;
       }
       await tankYaz(); kapat(); ciz(); toast(n+' tank eklendi');
