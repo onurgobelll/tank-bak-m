@@ -108,17 +108,19 @@ main{padding:8px 16px 0}
 .notD:active,.notS:active{transform:scale(.95)}
 .pill.notPill{background:#FEF3C7;color:#92400E;border-color:#FDE68A;font-weight:700}
 .pill.acikPill{background:#7C3AED;color:#fff;border-color:transparent;font-weight:700}
-.anKart{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:8px}
-.anBas{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:9px}
-.anBas b{font-family:var(--cond);font-size:17px;letter-spacing:.03em}
-.anBas span{font-size:11.5px;color:var(--muted)}
-.anDegerler{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
-.anDeger{background:var(--bg);border-radius:8px;padding:6px 8px;text-align:center}
-.anDeger span{display:block;font-size:11px;color:var(--muted);margin-bottom:2px}
-.anDeger b{font-size:15px;font-weight:600}
+.anKart{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:9px 12px;margin-bottom:6px}
+.anBas{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px}
+.anBas b{font-family:var(--cond);font-size:16px;letter-spacing:.03em}
+.anBas span{font-size:11px;color:var(--muted)}
+.anDegerler{display:grid;grid-template-columns:repeat(3,1fr);gap:5px}
+.anDeger{background:var(--bg);border-radius:7px;padding:5px 6px;text-align:center}
+.anDeger span{display:block;font-size:10px;color:var(--muted);margin-bottom:1px}
+.anDeger b{font-size:14px;font-weight:600}
 .anDeger.anSapan{background:#FEF2F2}
 .anDeger.anSapan span,.anDeger.anSapan b{color:var(--alarm)}
-.anUyari{font-size:11.5px;color:var(--alarm);margin-top:7px;font-weight:600}
+.anAlt{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:6px}
+.anUyari{font-size:10.5px;color:var(--alarm);font-weight:600;white-space:nowrap}
+.anTekrarBtn{margin:0;padding:6px 12px;font-size:12px;width:auto;flex-shrink:0}
 .pill.numBekPill{background:#EDE9FE;color:#5B21B6;border-color:#DDD6FE;font-weight:700}
 .pill.numAlPill{background:#F5F3FF;color:#6D28D9;border-color:#DDD6FE}
 .numKart{background:#F5F3FF;border:1px solid #C4B5FD;border-radius:12px;padding:10px 12px;margin-bottom:9px}
@@ -523,7 +525,7 @@ function revYaz(){
     fbIstek('/'+encodeURIComponent(K_REV)+'.json',{method:'PUT', body:JSON.stringify(v)}).catch(()=>{});
   }catch(e){}
 }
-const SURUM='13.08.2026 10:22';
+const SURUM='14.08.2026 05:15';
 let urunHedef={};
 const K_PERSONEL='tanktakip:personel', K_AD_KILIT='tanktakip:cihazKilit';
 /* v3 anahtarları: eski sürümlü cihazlar (eski önbellekli bilgisayar/telefon)
@@ -1146,11 +1148,11 @@ function numuneDialog(baslik, mevcut){
         <p class="ob">${baslik}</p>
         <p class="hint" style="margin:0 0 10px">Değerleri biliyorsan gir, bilmiyorsan boş bırakıp sonra tamamlayabilirsin.</p>
         <div class="two">
-          <div><label>pH</label><input type="number" step="0.01" id="nmPh" inputmode="decimal" value="${m.ph||''}"></div>
-          <div><label>Tuz %</label><input type="number" step="0.1" id="nmTuz" inputmode="decimal" value="${m.tuz||''}"></div>
+          <div><label>pH <small style="font-weight:400;color:var(--muted)">(~3.4-4.2)</small></label><input type="text" inputmode="decimal" id="nmPh" value="${m.ph||''}"></div>
+          <div><label>Tuz % <small style="font-weight:400;color:var(--muted)">(~5-7.5, yüksek)</small></label><input type="text" inputmode="decimal" id="nmTuz" value="${m.tuz||''}"></div>
         </div>
         <div class="two" style="margin-top:8px">
-          <div><label>Asit %</label><input type="number" step="0.01" id="nmAsit" inputmode="decimal" value="${m.asit||''}"></div>
+          <div><label>Asit % <small style="font-weight:400;color:var(--muted)">(~0.5-1.2, düşük)</small></label><input type="text" inputmode="decimal" id="nmAsit" value="${m.asit||''}"></div>
           <div></div>
         </div>
         <label style="margin-top:8px;display:block">Not</label>
@@ -1361,21 +1363,23 @@ function tankOzetMetni(t){
 /* dolum uygula: geçmişi koruyarak */
 function dolumYaz(t, veri, gecmisiKoru){
   if(!gecmisiKoru){
-    // önceki partiyi arşivle, sonra ölçümleri temizle
+    // önceki partiyi arşivle (ölçüm VE numune sayısıyla birlikte), sonra o partinin verisini temizle
     if(t.urun||t.baslangic){
       (t.gecmis=t.gecmis||[]).unshift({
         urun:t.urun, baslangic:t.baslangic, bitis:t.bosaltildi||bugunISO(),
-        kapasite:t.kapasite, olcumSayi:(t.olcumler||[]).length
+        kapasite:t.kapasite, olcumSayi:(t.olcumler||[]).length,
+        numuneArsiv:(Array.isArray(t.numune2)&&t.numune2.length)? t.numune2 : undefined
       });
       if(t.gecmis.length>20) t.gecmis.length=20;
     }
     t.olcumler=[]; t.kimyasallar=[];
+    t.numune2=[];              // yeni parti — eski partinin numuneleri gecmis[]'te arşivli kaldı
   }
   Object.assign(t, veri);
   delete t.bosaltildi; delete t.bosaltan; delete t.bosaltmaSaat;
   delete t.temizlendi; delete t.temizleyen; delete t.temizlikSaat;
   delete t.erkenBitiren; delete t.erkenTarih; delete t.hedefGunAsil; delete t.hedefDusuk;
-  t.olcumler=t.olcumler||[]; t.kimyasallar=t.kimyasallar||[];
+  t.olcumler=t.olcumler||[]; t.kimyasallar=t.kimyasallar||[]; t.numune2=t.numune2||[];
 }
 function isEmriUret(tarih){
   const out=[];
@@ -2445,10 +2449,15 @@ function numuneNormal(){
   return NUMUNE_NORMAL_VARSAYILAN;
 }
 function sonNumune(t){ const l=numuneListe(t); return l.length? l[0] : null; }
+/* Depoda virgüllü ("3,80") ya da noktalı ("3.80") olabilir — ikisini de sayıya çevir. */
+function ondalikSayi(v){
+  if(v===''||v==null) return NaN;
+  return parseFloat(String(v).trim().replace(',','.'));
+}
 function numuneSapmaVar(m){
   if(!m) return false;
   const n=numuneNormal();
-  const disinda=(v,ar)=> v!=='' && v!=null && !isNaN(+v) && (+v<ar[0] || +v>ar[1]);
+  const disinda=(v,ar)=>{ const x=ondalikSayi(v); return !isNaN(x) && (x<ar[0] || x>ar[1]); };
   return disinda(m.ph,n.ph) || disinda(m.tuz,n.tuz) || disinda(m.asit,n.asit);
 }
 let anUrun='hepsi', anSirala='sapma';
@@ -2467,7 +2476,7 @@ function cizAnaliz(){
   const kayitlar = numluTanklar.map(t=>({t, m:sonNumune(t)}))
     .filter(x=>anUrun==='hepsi' || x.t.urun===anUrun);
 
-  const degerler=(alan)=> kayitlar.map(x=>x.m[alan]).filter(v=>v!=='' && v!=null && !isNaN(+v)).map(Number);
+  const degerler=(alan)=> kayitlar.map(x=>ondalikSayi(x.m[alan])).filter(v=>!isNaN(v));
   const ort=(arr)=> arr.length? (arr.reduce((a,b)=>a+b,0)/arr.length) : null;
   const ortPh=ort(degerler('ph')), ortTuz=ort(degerler('tuz')), ortAsit=ort(degerler('asit'));
   const sapanSay = kayitlar.filter(x=>numuneSapmaVar(x.m)).length;
@@ -2483,7 +2492,8 @@ function cizAnaliz(){
   const n=numuneNormal();
   const rozet=(alan,v,birim)=>{
     if(v==='' || v==null) return `<div class="anDeger"><span>${alan}</span><b>—</b></div>`;
-    const sapti = !isNaN(+v) && (+v<n[alan.toLocaleLowerCase('tr')][0] || +v>n[alan.toLocaleLowerCase('tr')][1]);
+    const vs=ondalikSayi(v);
+    const sapti = !isNaN(vs) && (vs<n[alan.toLocaleLowerCase('tr')][0] || vs>n[alan.toLocaleLowerCase('tr')][1]);
     return `<div class="anDeger${sapti?' anSapan':''}"><span>${alan}</span><b>${v}${birim}</b></div>`;
   };
 
@@ -2513,8 +2523,10 @@ function cizAnaliz(){
           ${rozet('Tuz', m.tuz, '%')}
           ${rozet('Asit', m.asit, '%')}
         </div>
-        ${numuneSapmaVar(m)?`<div class="anUyari"><span>⚠</span> normal aralık dışında</div>`:''}
-        <button class="btn ghost anTekrarBtn" data-antekrar="${t.id}" style="margin-top:8px">🔁 Tekrar Numune Al</button>
+        <div class="anAlt">
+          ${numuneSapmaVar(m)?`<span class="anUyari">⚠ aralık dışı</span>`:'<span></span>'}
+          <button class="btn ghost anTekrarBtn" data-antekrar="${t.id}">🔁 Tekrar Al</button>
+        </div>
       </div>`).join('')}
     ${sirali.length>60?`<p class="hint">… ve ${sirali.length-60} tank daha</p>`:''}
   `;
@@ -3260,6 +3272,22 @@ function detay(id){
         </div>`:''}
       </div>`).join('') : '<p class="hint">Bu tank için henüz numune alınmadı.</p>'}
     ${!t.bosaltildi?`<button class="btn ghost" id="numTekBtn">🧪 Yeni Numune Ekle</button>`:''}
+    `:''}
+    ${(Array.isArray(t.gecmis)&&t.gecmis.length)?`
+    <details style="margin-top:10px">
+      <summary style="cursor:pointer;color:var(--muted);font-size:12.5px">Geçmiş Partiler (${t.gecmis.length})</summary>
+      ${t.gecmis.map(g=>`
+        <div class="numKart" style="opacity:.85;margin-top:8px">
+          <b>${g.urun||'—'}</b>
+          <span>${kisaTarih(g.baslangic)} → ${kisaTarih(g.bitis)} · ${g.kapasite||''}${g.olcumSayi?' · '+g.olcumSayi+' ölçüm':''}</span>
+          ${(g.numuneArsiv&&g.numuneArsiv.length)? g.numuneArsiv.map(m=>`
+            <div style="margin-top:6px;padding-top:6px;border-top:1px dashed #DDD6FE;font-size:12.5px">
+              🧪 ${kisaTarih(m.tarih)}${m.gun?' · '+m.gun+'. gün':''} —
+              ${m.ph?'pH '+m.ph+' · ':''}${m.tuz?'Tuz '+m.tuz+'% · ':''}${m.asit?'Asit '+m.asit+'%':''}
+              ${m.not?`<div style="color:var(--ink);margin-top:2px">${m.not}</div>`:''}
+            </div>`).join('') : ''}
+        </div>`).join('')}
+    </details>
     `:''}
     ${!t.bosaltildi?(acikMi(t)
       ? `<div class="acikKart"><b>🔓 AÇIK TANK</b>
