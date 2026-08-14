@@ -525,7 +525,7 @@ function revYaz(){
     fbIstek('/'+encodeURIComponent(K_REV)+'.json',{method:'PUT', body:JSON.stringify(v)}).catch(()=>{});
   }catch(e){}
 }
-const SURUM='14.08.2026 05:15';
+const SURUM='14.08.2026 16:34';
 let urunHedef={};
 const K_PERSONEL='tanktakip:personel', K_AD_KILIT='tanktakip:cihazKilit';
 /* v3 anahtarları: eski sürümlü cihazlar (eski önbellekli bilgisayar/telefon)
@@ -3831,7 +3831,7 @@ A-002;Salatalık No.2;11294;06.07.2026"></textarea>
 /* ---- ANALİZ SONUÇLARI TOPLU YÜKLEME ----
    Excel: Tank | pH | Tuz | Asit sütunları — her satır bir tanka bir ölçüm ekler. */
 function analizSatirTani(bas){
-  const sade=x=>String(x||'').toLocaleLowerCase('tr').replace(/[\s_.()%]/g,'');
+  const sade=x=>String(x||'').toLocaleLowerCase('tr').replace(/[\s_.()%\/]/g,'');
   const b=bas.map(sade);
   const iK=b.findIndex(x=>x.includes('tank')||x.includes('kod'));
   const iP=b.findIndex(x=>x==='ph');
@@ -3839,7 +3839,21 @@ function analizSatirTani(bas){
   const iA=b.findIndex(x=>x.includes('asit')||x.includes('asitlik'));
   const iS=b.findIndex(x=>x.includes('sicaklik')||x.includes('sıcaklık')||x==='c'||x==='derece');
   const iN=b.findIndex(x=>x.includes('not')||x.includes('aciklama')||x.includes('açıklama'));
-  return {iK,iP,iT,iA,iS,iN};
+  /* Analiz tarihi: "ANALİZ TARİHİ" gibi — dolum/bidon tarihiyle karışmasın */
+  const iAT=b.findIndex(x=>x.includes('analiztarih')||(x.includes('analiz')&&x.includes('tarih')));
+  return {iK,iP,iT,iA,iS,iN,iAT};
+}
+/* Excel hücresinden tarihi ISO'ya çevir (Date objesi, "2026-08-14 00:00:00", "14.08.2026") */
+function analizTarihCevir(v){
+  if(v==null||v==='') return '';
+  if(v instanceof Date && !isNaN(v)) return v.toISOString().slice(0,10);
+  const s=String(v).trim();
+  let m=s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if(m) return m[1]+'-'+m[2]+'-'+m[3];
+  m=s.match(/^(\d{1,2})[.\/-](\d{1,2})[.\/-](\d{4})/);
+  if(m) return m[3]+'-'+String(+m[2]).padStart(2,'0')+'-'+String(+m[1]).padStart(2,'0');
+  const d=new Date(s);
+  return isNaN(d)? '' : d.toISOString().slice(0,10);
 }
 function analizYukle(){
   const p=panel(`
@@ -3855,7 +3869,7 @@ A-002;3.8;6.2;0.85"></textarea>
   const q=s=>p.querySelector(s);
   const isle=(satirlar)=>{
     const bas=(satirlar[0]||[]).map(x=>String(x||'').trim());
-    const {iK,iP,iT,iA,iS,iN}=analizSatirTani(bas);
+    const {iK,iP,iT,iA,iS,iN,iAT}=analizSatirTani(bas);
     if(iK<0){
       q('#an_sonuc').innerHTML='<p class="hint" style="color:var(--alarm)">Tank sütunu bulunamadı. Beklenen: Tank · pH · Tuz · Asit<br>Bulunan başlıklar: '+bas.join(' | ')+'</p>';
       return;
@@ -3865,10 +3879,12 @@ A-002;3.8;6.2;0.85"></textarea>
       return;
     }
     const bug=bugunISO();
-    const eslesen=[], eslesmeyen=[], bosSatir=[];
+    const eslesen=[], eslesmeyen=[], bosSatir=[], zatenVar=[], tankDisi=[];
     satirlar.slice(1).forEach(r=>{
       if(!r || !r[iK] || String(r[iK]).trim()==='') return;
       const kodHam=String(r[iK]).trim();
+      /* BİDON gibi tank olmayan satırlar — sisteme girmez, ayrıca raporlanır */
+      if(!/^[A-ZÇĞİÖŞÜ]\s*-?\s*\d+$/i.test(kodHam)){ tankDisi.push(kodHam); return; }
       const kod=kodBul(kodHam)||kodDuzelt(kodHam);
       const t=aktifTankBul(kod);
       const ph=iP>=0?String(r[iP]??'').trim():'';
@@ -3876,35 +3892,58 @@ A-002;3.8;6.2;0.85"></textarea>
       const asit=iA>=0?String(r[iA]??'').trim():'';
       const sic=iS>=0?String(r[iS]??'').trim():'';
       const not_=iN>=0?String(r[iN]??'').trim():'';
+      /* Analiz tarihi sütunu varsa onu kullan; yoksa bugünü kabul et */
+      const aTarih=(iAT>=0? analizTarihCevir(r[iAT]) : '') || bug;
       if(!ph&&!tuz&&!asit&&!sic&&!not_){ bosSatir.push(kod); return; }
       if(!t){ eslesmeyen.push(kod); return; }
-      eslesen.push({t, kod:t.kod, urun:t.urun, olcum:{tarih:bug, ph, tuz, asit, sicaklik:sic, not:not_}});
+      /* MÜKERRER KONTROLÜ: aynı tank + aynı analiz tarihi zaten kayıtlıysa atla */
+      const varMi=(numuneListe(t)||[]).some(m=>m.tarih===aTarih);
+      if(varMi){ zatenVar.push(kod+' ('+kisaTarih(aTarih)+')'); return; }
+      eslesen.push({t, kod:t.kod, urun:t.urun, aTarih,
+        olcum:{tarih:aTarih, ph, tuz, asit, sicaklik:sic, not:not_}});
     });
+    const atlananOzet =
+        (zatenVar.length?`<p class="hint" style="color:var(--yesil)">✓ ${zatenVar.length} kayıt <b>zaten sistemde</b>, tekrar eklenmeyecek${zatenVar.length<=12?': '+zatenVar.slice(0,12).join(', '):''}</p>`:'')
+      + (tankDisi.length?`<p class="hint">${tankDisi.length} satır tank kodu değil (BİDON vb.), atlandı.</p>`:'')
+      + (eslesmeyen.length?`<p class="hint" style="color:var(--alarm)">⚠ ${eslesmeyen.length} kod tank listesinde bulunamadı: ${[...new Set(eslesmeyen)].slice(0,10).join(', ')}</p>`:'')
+      + (bosSatir.length?`<p class="hint">${bosSatir.length} satırda değer yok, atlandı.</p>`:'');
     if(!eslesen.length){
-      q('#an_sonuc').innerHTML='<p class="hint" style="color:var(--alarm)">Hiçbir satır eşleşmedi.'+(eslesmeyen.length?'<br>Bulunamayan kodlar: '+eslesmeyen.slice(0,15).join(', '):'')+'</p>';
+      q('#an_sonuc').innerHTML='<p class="hint"><b>Eklenecek yeni analiz yok.</b></p>'+atlananOzet;
       return;
     }
+    /* Analiz tarihine göre grupla — hangi tarihten kaç yeni kayıt geliyor */
+    const tarihGrup={};
+    eslesen.forEach(x=>{ tarihGrup[x.aTarih]=(tarihGrup[x.aTarih]||0)+1; });
     q('#an_sonuc').innerHTML=
-      '<div class="sec">Uygulanacak ('+eslesen.length+')</div>'
-      + eslesen.slice(0,40).map(x=>`<div class="log"><span class="d">${x.kod}</span><span class="v">${x.urun||'—'}
+      '<div class="sec">Eklenecek Yeni Analizler ('+eslesen.length+')</div>'
+      + '<p class="hint">'+Object.entries(tarihGrup).sort().map(([t,n])=>`<b>${kisaTarih(t)}</b>: ${n} tank`).join(' · ')+'</p>'
+      + eslesen.slice(0,40).map(x=>`<div class="log"><span class="d">${x.kod}</span><span class="v">${kisaTarih(x.aTarih)} · ${x.urun||'—'}
           ${x.olcum.ph?' · pH '+x.olcum.ph:''}${x.olcum.tuz?' · Tuz '+x.olcum.tuz+'%':''}${x.olcum.asit?' · Asit '+x.olcum.asit+'%':''}${x.olcum.sicaklik?' · '+x.olcum.sicaklik+'°':''}</span></div>`).join('')
-      + (eslesen.length>40?`<p class="hint">… ve ${eslesen.length-40} tank daha</p>`:'')
-      + (eslesmeyen.length?`<p class="hint" style="color:var(--alarm)">⚠ ${eslesmeyen.length} kod tank listesinde bulunamadı: ${eslesmeyen.slice(0,10).join(', ')}</p>`:'')
-      + (bosSatir.length?`<p class="hint">${bosSatir.length} satırda değer yok, atlandı.</p>`:'')
-      + '<button class="btn" id="an_uygula" style="margin-top:10px">'+eslesen.length+' Tanka Ölçüm Ekle</button>';
+      + (eslesen.length>40?`<p class="hint">… ve ${eslesen.length-40} kayıt daha</p>`:'')
+      + atlananOzet
+      + '<button class="btn" id="an_uygula" style="margin-top:10px">'+eslesen.length+' Analiz Kaydı Ekle</button>';
     q('#an_uygula').onclick=async()=>{
       const ok=await onayDialog('Analiz Sonuçlarını Ekle',
-        eslesen.length+' tanka bugünün tarihiyle (${bug}) ölçüm eklenecek.\nMevcut ölçüm geçmişi silinmez.'.replace('${bug}',kisaTarih(bug)),'Ekle');
+        eslesen.length+' analiz kaydı eklenecek.\nHer kayıt kendi analiz tarihiyle işlenir.\nMevcut kayıtlar silinmez.','Ekle');
       if(!ok) return;
       window.__analizOnceki=JSON.parse(JSON.stringify(tanklar));
+      let sira=0;
       eslesen.forEach(x=>{
         (x.t.olcumler=x.t.olcumler||[]).unshift(x.olcum);
-        /* Excel'den analiz gelmesi = numune alınmış demektir */
-        numuneListe(x.t).unshift({id:'m'+Date.now()+'_'+x.t.id, tarih:x.olcum.tarih, gun:gun(x.t),
-          kisi:kullaniciAdi()||'—', saat:saatSimdi(), ph:x.olcum.ph||'', tuz:x.olcum.tuz||'', asit:x.olcum.asit||'', not:x.olcum.not||''});
+        /* Excel'den analiz gelmesi = numune alınmış demektir.
+           gun: analiz tarihindeki fermantasyon günü (bugün değil) */
+        numuneListe(x.t).push({id:'m'+Date.now()+'_'+(sira++)+'_'+x.t.id, tarih:x.aTarih,
+          gun: gunTarihte(x.t, x.aTarih),
+          kisi:kullaniciAdi()||'—', saat:saatSimdi(),
+          ph:x.olcum.ph||'', tuz:x.olcum.tuz||'', asit:x.olcum.asit||'', not:x.olcum.not||''});
+      });
+      /* Her tankın numune ve ölçüm listesini tarihe göre yeniden sırala (en yeni başta) */
+      [...new Set(eslesen.map(x=>x.t))].forEach(t=>{
+        if(Array.isArray(t.numune2)) t.numune2.sort((a,b)=>String(b.tarih||'').localeCompare(String(a.tarih||'')));
+        if(Array.isArray(t.olcumler)) t.olcumler.sort((a,b)=>String(b.tarih||'').localeCompare(String(a.tarih||'')));
       });
       await tankYaz();
-      q('#an_sonuc').innerHTML='<p class="hint" style="color:var(--yesil)">✓ '+eslesen.length+' tanka ölçüm eklendi.</p>'
+      q('#an_sonuc').innerHTML='<p class="hint" style="color:var(--yesil)">✓ '+eslesen.length+' analiz kaydı eklendi.</p>'
         + '<button class="btn ghost" id="an_geri" style="margin-top:8px">Geri Al</button>';
       q('#an_geri').onclick=async()=>{
         if(!window.__analizOnceki) return;
