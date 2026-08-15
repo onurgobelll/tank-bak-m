@@ -108,6 +108,11 @@ main{padding:8px 16px 0}
 .notD:active,.notS:active{transform:scale(.95)}
 .pill.notPill{background:#FEF3C7;color:#92400E;border-color:#FDE68A;font-weight:700}
 .pill.acikPill{background:#7C3AED;color:#fff;border-color:transparent;font-weight:700}
+.tersUyari{background:#FFF7ED;border:1.5px solid #FDBA74;border-radius:12px;padding:11px 13px;margin:8px 0;
+  display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.tersUyari b{display:block;font-size:13.5px;color:#9A3412}
+.tersUyari span{display:block;font-size:11.5px;color:#B45309;margin-top:3px;line-height:1.4}
+.tersUyari .btn{width:auto;margin:0;padding:8px 14px;font-size:12.5px;flex-shrink:0}
 .anKart{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:9px 12px;margin-bottom:6px}
 .anBas{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px}
 .anBas b{font-family:var(--cond);font-size:16px;letter-spacing:.03em}
@@ -525,7 +530,7 @@ function revYaz(){
     fbIstek('/'+encodeURIComponent(K_REV)+'.json',{method:'PUT', body:JSON.stringify(v)}).catch(()=>{});
   }catch(e){}
 }
-const SURUM='14.08.2026 16:34';
+const SURUM='15.08.2026 05:12';
 let urunHedef={};
 const K_PERSONEL='tanktakip:personel', K_AD_KILIT='tanktakip:cihazKilit';
 /* v3 anahtarları: eski sürümlü cihazlar (eski önbellekli bilgisayar/telefon)
@@ -1165,12 +1170,25 @@ function numuneDialog(baslik, mevcut){
     document.body.appendChild(ov);
     const bitir=v=>{ ov.remove(); resolve(v); };
     ov.querySelector('#nmIptal').onclick=()=>bitir(null);
-    ov.querySelector('#nmTamam').onclick=()=>bitir({
-      ph:ov.querySelector('#nmPh').value.trim(),
-      tuz:ov.querySelector('#nmTuz').value.trim(),
-      asit:ov.querySelector('#nmAsit').value.trim(),
-      not:ov.querySelector('#nmNot').value.trim()
-    });
+    ov.querySelector('#nmTamam').onclick=async()=>{
+      const tuzV=ov.querySelector('#nmTuz').value.trim();
+      const asitV=ov.querySelector('#nmAsit').value.trim();
+      const tz=ondalikSayi(tuzV), as=ondalikSayi(asitV);
+      /* Ters girme kontrolü: turşuda tuz asitten yüksektir */
+      if(!isNaN(tz) && !isNaN(as) && tz < as){
+        const dogru=await onayDialog('Değerler ters mi girildi?',
+          'Tuz '+tuzV+'% · Asit '+asitV+'%\n\nTurşuda tuz genelde asitten yüksektir.\nDoğrusu şu olabilir:\nTuz '+asitV+'% · Asit '+tuzV+'%\n\nYer değiştirilsin mi?','Evet, değiştir');
+        if(dogru){
+          bitir({ph:ov.querySelector('#nmPh').value.trim(), tuz:asitV, asit:tuzV, not:ov.querySelector('#nmNot').value.trim()});
+          return;
+        }
+      }
+      bitir({
+        ph:ov.querySelector('#nmPh').value.trim(),
+        tuz:tuzV, asit:asitV,
+        not:ov.querySelector('#nmNot').value.trim()
+      });
+    };
     ov.onclick=e=>{ if(e.target===ov) bitir(null); };
   });
 }
@@ -1379,6 +1397,10 @@ function dolumYaz(t, veri, gecmisiKoru){
   delete t.bosaltildi; delete t.bosaltan; delete t.bosaltmaSaat;
   delete t.temizlendi; delete t.temizleyen; delete t.temizlikSaat;
   delete t.erkenBitiren; delete t.erkenTarih; delete t.hedefGunAsil; delete t.hedefDusuk;
+  /* YENİ PARTİ: önceki partinin "fermantasyon kapatıldı" durumu silinmeli,
+     yoksa tank iş emrinde çıkmaz ve durumu hep "hazır" görünür. */
+  delete t.kapatildi; delete t.kapatan; delete t.kapatmaSaat; delete t.kapanisKontrol;
+  delete t.acik; delete t.numune;
   t.olcumler=t.olcumler||[]; t.kimyasallar=t.kimyasallar||[]; t.numune2=t.numune2||[];
 }
 function isEmriUret(tarih){
@@ -2094,7 +2116,28 @@ function cizIsEmri(){
 
   const e=document.getElementById('ekran');
   if(!liste.length){
-    e.innerHTML=`<div class="empty"><b>Bu tarihte iş yok</b>${tanklar.some(t=>!t.bosaltildi)?'Programda bu güne görev tanımlı değil.':'Önce Tanklar sekmesinden dolum kaydı aç.'}</div>`;
+    /* Boş ekranda da onarım uyarısı görünmeli — asıl sorunu burada fark ediliyor */
+    const kkBos=kapaliKalmisTanklar();
+    e.innerHTML=
+      ((kkBos.length&&yonetici)?`<button class="gecUyari" id="kapaliUyariBtn" style="background:#FFF7ED;border-color:#FDBA74">
+        <span class="gecIkon">🔧</span>
+        <span class="gecMetin"><b style="color:#9A3412">${kkBos.length} tank yanlışlıkla "kapalı" görünüyor</b>${kkBos.slice(0,5).map(t=>t.kod).join(', ')}${kkBos.length>5?'…':''} — yeniden dolduruldu ama iş emri çıkmıyor. Dokun ve düzelt</span>
+        <span class="gecOk" style="color:#D97706">›</span>
+      </button>`:'')
+      + `<div class="empty"><b>Bu tarihte iş yok</b>${tanklar.some(t=>!t.bosaltildi)?'Programda bu güne görev tanımlı değil.':'Önce Tanklar sekmesinden dolum kaydı aç.'}</div>`;
+    const kub=document.getElementById('kapaliUyariBtn');
+    if(kub) kub.onclick=async()=>{
+      const kk=kapaliKalmisTanklar();
+      if(!kk.length) return;
+      const ok=await onayDialog('Kapalı Kalmış Tankları Düzelt',
+        kk.length+' tank yeniden dolduruldu ama eski partiden kalan "kapatıldı" işareti yüzünden iş emri çıkmıyor:\n\n'+
+        kk.slice(0,10).map(t=>t.kod+' ('+(t.urun||'')+', '+gun(t)+'. gün)').join('\n')+
+        (kk.length>10?`\n… ve ${kk.length-10} tank daha`:'')+
+        '\n\nBu işaret kaldırılsın ve tanklar programa dahil olsun mu?','Düzelt');
+      if(!ok) return;
+      await kapaliKalmisDuzelt(kk);
+      cizIsEmri(); toast(kk.length+' tank tekrar programa alındı');
+    };
     return;
   }
   let gecikenler=gecikTumu.slice();
@@ -2120,6 +2163,12 @@ function cizIsEmri(){
            <div><span>Tank</span><b>${liste.length}</b></div>
            <div><span>Tuz</span><b>${tuzToplam?tuzToplam+' kg':'—'}</b></div>`}
     </div>
+    ${(()=>{ const kk=kapaliKalmisTanklar(); return (kk.length&&yonetici)?`
+      <button class="gecUyari" id="kapaliUyariBtn" style="background:#FFF7ED;border-color:#FDBA74">
+        <span class="gecIkon">🔧</span>
+        <span class="gecMetin"><b style="color:#9A3412">${kk.length} tank yanlışlıkla "kapalı" görünüyor</b>${kk.slice(0,5).map(t=>t.kod).join(', ')}${kk.length>5?'…':''} — yeniden dolduruldu ama iş emri çıkmıyor. Dokun ve düzelt</span>
+        <span class="gecOk" style="color:#D97706">›</span>
+      </button>`:''; })()}
     ${(ieGorev!=='GEC' && gecikTumu.length)?`
       <button class="gecUyari" id="gecUyariBtn">
         <span class="gecIkon">⏰</span>
@@ -2253,6 +2302,19 @@ function cizIsEmri(){
       const d=await numuneDialog(t.kod+' — Numune Alındı ('+gun(t)+'. gün)');
       if(d===null) return;
       await numuneEkle(id, d); cizIsEmri(); toast(t.kod+' numune kaydedildi');
+      return;
+    }
+    if(ev.target.closest('#kapaliUyariBtn')){
+      const kk=kapaliKalmisTanklar();
+      if(!kk.length) return;
+      const ok=await onayDialog('Kapalı Kalmış Tankları Düzelt',
+        kk.length+' tank yeniden dolduruldu ama eski partiden kalan "kapatıldı" işareti yüzünden iş emri çıkmıyor:\n\n'+
+        kk.slice(0,10).map(t=>t.kod+' ('+(t.urun||'')+', '+gun(t)+'. gün)').join('\n')+
+        (kk.length>10?`\n… ve ${kk.length-10} tank daha`:'')+
+        '\n\nBu işaret kaldırılsın ve tanklar programa dahil olsun mu?','Düzelt');
+      if(!ok) return;
+      await kapaliKalmisDuzelt(kk);
+      cizIsEmri(); toast(kk.length+' tank tekrar programa alındı');
       return;
     }
     if(ev.target.closest('#gecUyariBtn')){
@@ -2448,6 +2510,35 @@ function numuneNormal(){
   if(n && typeof n==='object' && gecerli(n.ph) && gecerli(n.tuz) && gecerli(n.asit)) return n;
   return NUMUNE_NORMAL_VARSAYILAN;
 }
+/* Tuz ve Asit ters girilmiş kayıtları bul.
+   Turşuda tuz her zaman asitten yüksektir (tuz ~5-7%, asit ~0.5-1.2%).
+   Tuz < Asit ise değerler kutuları karışmış demektir. */
+/* Yeniden doldurulmuş ama eski partiden "kapatıldı" bayrağı üstünde kalmış tanklar.
+   Belirti: tank dolu (boşaltılmamış) ve kapatma tarihi dolum tarihinden ÖNCE. */
+function kapaliKalmisTanklar(){
+  return tanklar.filter(t=>{
+    if(t.bosaltildi || !t.kapatildi || !t.baslangic) return false;
+    return String(t.kapatildi) < String(t.baslangic);
+  });
+}
+async function kapaliKalmisDuzelt(liste){
+  liste.forEach(t=>{ delete t.kapatildi; delete t.kapatan; delete t.kapatmaSaat; delete t.kapanisKontrol; });
+  await tankYaz();
+}
+function tersNumuneler(){
+  const out=[];
+  tanklar.forEach(t=>{
+    (numuneListe(t)||[]).forEach(m=>{
+      const tz=ondalikSayi(m.tuz), as=ondalikSayi(m.asit);
+      if(!isNaN(tz) && !isNaN(as) && tz < as) out.push({t, m, tuz:tz, asit:as});
+    });
+  });
+  return out;
+}
+async function tersleriDuzelt(liste){
+  liste.forEach(({m})=>{ const gecici=m.tuz; m.tuz=m.asit; m.asit=gecici; });
+  await tankYaz();
+}
 function sonNumune(t){ const l=numuneListe(t); return l.length? l[0] : null; }
 /* Depoda virgüllü ("3,80") ya da noktalı ("3.80") olabilir — ikisini de sayıya çevir. */
 function ondalikSayi(v){
@@ -2502,6 +2593,12 @@ function cizAnaliz(){
       <div class="dkart"><span>Ortalama pH</span><b>${ortPh!=null?ortPh.toFixed(2):'—'}</b></div>
       <div class="dkart"><span>Ortalama Tuz</span><b>${ortTuz!=null?ortTuz.toFixed(1)+'%':'—'}</b></div>
     </div>
+    ${(()=>{ const ters=tersNumuneler(); return ters.length?`
+      <div class="tersUyari">
+        <div><b>⚠ ${ters.length} kayıtta Tuz ve Asit ters girilmiş</b>
+        <span>Turşuda tuz asitten yüksektir. Örn: ${ters[0].t.kod} — Tuz ${ters[0].tuz}% / Asit ${ters[0].asit}% → doğrusu Tuz ${ters[0].asit}% / Asit ${ters[0].tuz}%</span></div>
+        ${yonetici?`<button class="btn" id="anTersDuzelt">${ters.length} Kaydı Düzelt</button>`:''}
+      </div>`:''; })()}
     <p class="hint" style="margin-top:6px">
       ${kayitlar.length} tank numunelendi${sapanSay?` · <b style="color:var(--alarm)">${sapanSay} tank normal aralık dışında</b>`:' · hepsi normal aralıkta'}
       ${numsuzTanklar.length?` · <a href="#" id="anNumsuzGit" style="color:var(--mavi)">ayrıca ${numsuzTanklar.length} tankta hiç numune yok →</a>`:''}
@@ -2532,6 +2629,17 @@ function cizAnaliz(){
   `;
   document.querySelectorAll('#anUrunChips .chip').forEach(b=>b.onclick=()=>{ anUrun=b.dataset.au; cizAnaliz(); });
   document.querySelectorAll('#anSiralaChips .chip').forEach(b=>b.onclick=()=>{ anSirala=b.dataset.as; cizAnaliz(); });
+  const td2=document.getElementById('anTersDuzelt');
+  if(td2) td2.onclick=async()=>{
+    const ters=tersNumuneler();
+    if(!ters.length) return;
+    const ornek=ters.slice(0,6).map(x=>`${x.t.kod}: Tuz ${x.tuz}→${x.asit} · Asit ${x.asit}→${x.tuz}`).join('\n');
+    const ok=await onayDialog('Ters Girilmiş Değerleri Düzelt',
+      ters.length+' kayıtta Tuz ve Asit yer değiştirecek:\n\n'+ornek+(ters.length>6?`\n… ve ${ters.length-6} kayıt daha`:''),'Düzelt');
+    if(!ok) return;
+    await tersleriDuzelt(ters);
+    cizAnaliz(); toast(ters.length+' kayıt düzeltildi');
+  };
   const ng=document.getElementById('anNumsuzGit');
   if(ng) ng.onclick=(ev)=>{ ev.preventDefault(); gorunum='isemri'; ieGorev='NUMUNE'; ciz(); };
   document.querySelectorAll('.anTekrarBtn').forEach(b=>b.onclick=async()=>{
