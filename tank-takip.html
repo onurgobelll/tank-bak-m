@@ -129,6 +129,8 @@ main{padding:8px 16px 0}
 .pill.numBekPill{background:#EDE9FE;color:#5B21B6;border-color:#DDD6FE;font-weight:700}
 .pill.numAlPill{background:#F5F3FF;color:#6D28D9;border-color:#DDD6FE}
 .numKart{background:#F5F3FF;border:1px solid #C4B5FD;border-radius:12px;padding:10px 12px;margin-bottom:9px}
+.gArsivRozet{background:#EDE9FE;color:#5B21B6;border-radius:7px;padding:3px 8px;font-size:11px;font-weight:600}
+.gArsivSatir{margin-top:5px;padding-top:5px;border-top:1px dashed #DDD6FE;font-size:12px;color:#6D28D9;line-height:1.45}
 .numKart b{font-family:var(--cond);font-size:18px;letter-spacing:.04em;color:#5B21B6}
 .numKart span{display:block;font-size:11.5px;color:#6D28D9;margin-top:2px}
 .chip.chipNum{border-color:#DDD6FE;color:#5B21B6}
@@ -530,7 +532,7 @@ function revYaz(){
     fbIstek('/'+encodeURIComponent(K_REV)+'.json',{method:'PUT', body:JSON.stringify(v)}).catch(()=>{});
   }catch(e){}
 }
-const SURUM='15.08.2026 05:12';
+const SURUM='15.08.2026 14:53';
 let urunHedef={};
 const K_PERSONEL='tanktakip:personel', K_AD_KILIT='tanktakip:cihazKilit';
 /* v3 anahtarları: eski sürümlü cihazlar (eski önbellekli bilgisayar/telefon)
@@ -1381,17 +1383,23 @@ function tankOzetMetni(t){
 /* dolum uygula: geçmişi koruyarak */
 function dolumYaz(t, veri, gecmisiKoru){
   if(!gecmisiKoru){
-    // önceki partiyi arşivle (ölçüm VE numune sayısıyla birlikte), sonra o partinin verisini temizle
+    /* ÖNCEKİ PARTİYİ TAM ARŞİVLE — ölçümler, numuneler, notlar, kimyasallar
+       hepsi gecmis[] içinde saklanır; aktif tankta sıfırdan başlanır. */
     if(t.urun||t.baslangic){
       (t.gecmis=t.gecmis||[]).unshift({
         urun:t.urun, baslangic:t.baslangic, bitis:t.bosaltildi||bugunISO(),
-        kapasite:t.kapasite, olcumSayi:(t.olcumler||[]).length,
-        numuneArsiv:(Array.isArray(t.numune2)&&t.numune2.length)? t.numune2 : undefined
+        kapasite:t.kapasite,
+        olcumSayi:(t.olcumler||[]).length,
+        olcumArsiv:  (Array.isArray(t.olcumler)   && t.olcumler.length)   ? t.olcumler   : undefined,
+        numuneArsiv: (Array.isArray(t.numune2)    && t.numune2.length)    ? t.numune2    : undefined,
+        notArsiv:    (Array.isArray(t.notlar2)    && t.notlar2.length)    ? t.notlar2    : undefined,
+        kimyasalArsiv:(Array.isArray(t.kimyasallar)&&t.kimyasallar.length)? t.kimyasallar: undefined,
+        kapatildi:t.kapatildi||'', bosaltan:t.bosaltan||''
       });
       if(t.gecmis.length>20) t.gecmis.length=20;
     }
-    t.olcumler=[]; t.kimyasallar=[];
-    t.numune2=[];              // yeni parti — eski partinin numuneleri gecmis[]'te arşivli kaldı
+    /* Aktif parti sıfırlanır — yeni tank gibi başlar */
+    t.olcumler=[]; t.kimyasallar=[]; t.numune2=[]; t.notlar2=[];
   }
   Object.assign(t, veri);
   delete t.bosaltildi; delete t.bosaltan; delete t.bosaltmaSaat;
@@ -3384,16 +3392,31 @@ function detay(id){
     ${(Array.isArray(t.gecmis)&&t.gecmis.length)?`
     <details style="margin-top:10px">
       <summary style="cursor:pointer;color:var(--muted);font-size:12.5px">Geçmiş Partiler (${t.gecmis.length})</summary>
-      ${t.gecmis.map(g=>`
-        <div class="numKart" style="opacity:.85;margin-top:8px">
+      ${t.gecmis.map((g,gi)=>`
+        <div class="numKart" style="opacity:.9;margin-top:8px">
           <b>${g.urun||'—'}</b>
-          <span>${kisaTarih(g.baslangic)} → ${kisaTarih(g.bitis)} · ${g.kapasite||''}${g.olcumSayi?' · '+g.olcumSayi+' ölçüm':''}</span>
-          ${(g.numuneArsiv&&g.numuneArsiv.length)? g.numuneArsiv.map(m=>`
-            <div style="margin-top:6px;padding-top:6px;border-top:1px dashed #DDD6FE;font-size:12.5px">
-              🧪 ${kisaTarih(m.tarih)}${m.gun?' · '+m.gun+'. gün':''} —
-              ${m.ph?'pH '+m.ph+' · ':''}${m.tuz?'Tuz '+m.tuz+'% · ':''}${m.asit?'Asit '+m.asit+'%':''}
-              ${m.not?`<div style="color:var(--ink);margin-top:2px">${m.not}</div>`:''}
-            </div>`).join('') : ''}
+          <span>${kisaTarih(g.baslangic)} → ${kisaTarih(g.bitis)}${g.kapasite?' · '+g.kapasite:''}${g.bosaltan?' · boşaltan: '+g.bosaltan:''}</span>
+          <div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:6px">
+            ${(g.numuneArsiv&&g.numuneArsiv.length)?`<span class="gArsivRozet">🧪 ${g.numuneArsiv.length} numune</span>`:''}
+            ${(g.olcumArsiv&&g.olcumArsiv.length)?`<span class="gArsivRozet">📊 ${g.olcumArsiv.length} ölçüm</span>`:(g.olcumSayi?`<span class="gArsivRozet">📊 ${g.olcumSayi} ölçüm</span>`:'')}
+            ${(g.notArsiv&&g.notArsiv.length&&yonetici)?`<span class="gArsivRozet">📝 ${g.notArsiv.length} not</span>`:''}
+            ${(g.kimyasalArsiv&&g.kimyasalArsiv.length)?`<span class="gArsivRozet">⚗ ${g.kimyasalArsiv.length} kimyasal</span>`:''}
+          </div>
+          ${((g.numuneArsiv&&g.numuneArsiv.length)||(g.olcumArsiv&&g.olcumArsiv.length)||(g.notArsiv&&g.notArsiv.length&&yonetici))?`
+          <details style="margin-top:7px">
+            <summary style="cursor:pointer;font-size:12px;color:#6D28D9">Ayrıntı</summary>
+            ${(g.numuneArsiv||[]).map(m=>`
+              <div class="gArsivSatir">🧪 ${kisaTarih(m.tarih)}${m.gun?' · '+m.gun+'. gün':''} —
+                ${m.ph?'pH '+m.ph+' · ':''}${m.tuz?'Tuz '+m.tuz+'% · ':''}${m.asit?'Asit '+m.asit+'%':''}${m.kisi?' · '+m.kisi:''}
+                ${m.not?`<div style="color:var(--ink)">${m.not}</div>`:''}</div>`).join('')}
+            ${(g.olcumArsiv||[]).slice(0,10).map(o=>`
+              <div class="gArsivSatir">📊 ${kisaTarih(o.tarih)} — pH ${o.ph||'—'} · Tuz ${o.tuz||'—'}${o.tuz?'%':''}${o.asit?' · Asit '+o.asit+'%':''}${o.sicaklik?' · '+o.sicaklik+'°':''}
+                ${o.not?`<div style="color:var(--ink)">${o.not}</div>`:''}</div>`).join('')}
+            ${(g.olcumArsiv&&g.olcumArsiv.length>10)?`<div class="gArsivSatir">… ve ${g.olcumArsiv.length-10} ölçüm daha</div>`:''}
+            ${yonetici?(g.notArsiv||[]).map(n=>`
+              <div class="gArsivSatir">📝 ${(n.m||'').replace(/&/g,'&amp;').replace(/</g,'&lt;')}
+                <div style="font-size:10.5px;color:#B45309">${n.k||'—'}${n.t?' · '+kisaTarih(n.t):''}</div></div>`).join(''):''}
+          </details>`:''}
         </div>`).join('')}
     </details>
     `:''}
@@ -3578,8 +3601,9 @@ function detay(id){
   q('#sil').onclick=async()=>{
     if(!confirm(t.kod+' ve tüm ölçümleri silinsin mi?')) return;
     silinenler.add(id); setKaydet(K_SILINEN,silinenler);
-    const notFotolari=(numuneListe(t)||[]).length?[]:[];   // numunede foto yok, ileride eklenebilir
+    /* Aktif VE arşivlenmiş notların fotoğraflarını da temizle — yetim kalmasın */
     (t.notlar2||[]).forEach(n=>{ if(n.foto) fotoSil(n.foto); });
+    (t.gecmis||[]).forEach(g=>(g.notArsiv||[]).forEach(n=>{ if(n.foto) fotoSil(n.foto); }));
     tanklar=tanklar.filter(x=>x.id!==id); await tankYaz(); kapat(); ciz();
   };
 }
