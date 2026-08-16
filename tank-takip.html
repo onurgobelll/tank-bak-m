@@ -532,7 +532,7 @@ function revYaz(){
     fbIstek('/'+encodeURIComponent(K_REV)+'.json',{method:'PUT', body:JSON.stringify(v)}).catch(()=>{});
   }catch(e){}
 }
-const SURUM='15.08.2026 14:53';
+const SURUM='16.08.2026 06:36';
 let urunHedef={};
 const K_PERSONEL='tanktakip:personel', K_AD_KILIT='tanktakip:cihazKilit';
 /* v3 anahtarları: eski sürümlü cihazlar (eski önbellekli bilgisayar/telefon)
@@ -2526,7 +2526,14 @@ function numuneNormal(){
 function kapaliKalmisTanklar(){
   return tanklar.filter(t=>{
     if(t.bosaltildi || !t.kapatildi || !t.baslangic) return false;
-    return String(t.kapatildi) < String(t.baslangic);
+    /* 1) Kapatma tarihi dolumdan ÖNCE — kesin eski partiden kalmış */
+    if(String(t.kapatildi) < String(t.baslangic)) return true;
+    /* 2) Kapatma dolumdan sonra ama tank hedef gününün çok başında.
+       Fermantasyon normalde hedefe yaklaşınca kapatılır; 3. günde kapalı
+       görünen tank yeniden doldurulmuş ama işaret temizlenmemiş demektir. */
+    const g=gun(t), hg=(+t.hedefGun)||30;
+    if(g < Math.min(hg-5, Math.round(hg*0.6))) return true;
+    return false;
   });
 }
 async function kapaliKalmisDuzelt(liste){
@@ -3259,7 +3266,17 @@ function form(id){
       ['kod','urun','baslangic','hedefGun','kapasite'].forEach(a=>{
         if(veri[a]!==undefined) tankLog(t,a,t[a],veri[a],'Elle');
       });
+      /* Dolum tarihi ileri alındıysa ya da ürün değiştiyse bu YENİ PARTİ demektir:
+         önceki partiden kalan kapatma/boşaltma işaretleri temizlenmeli, yoksa
+         tank iş emrine girmez. */
+      const yeniParti = (veri.baslangic && veri.baslangic!==t.baslangic) || (veri.urun && veri.urun!==t.urun);
       Object.assign(t,veri);
+      if(yeniParti){
+        delete t.kapatildi; delete t.kapatan; delete t.kapatmaSaat; delete t.kapanisKontrol;
+        delete t.bosaltildi; delete t.bosaltan; delete t.bosaltmaSaat;
+        delete t.temizlendi; delete t.temizleyen; delete t.temizlikSaat;
+        delete t.erkenBitiren; delete t.erkenTarih; delete t.hedefDusuk; delete t.acik;
+      }
     }
     else tanklar.push({id:'t'+Date.now(),...veri,bosaltildi:'',olcumler:[],kimyasallar:[]});
     await tankYaz(); kapat(); ciz(); toast(t?'Güncellendi':'Tank eklendi');
@@ -3454,7 +3471,13 @@ function detay(id){
         ${t.erkenBitiren?`<button class="btn ghost" id="erkenGeriAl">⬇ Erken Hazır'ı Geri Al</button>
           <p class="hint">Erken hazır: ${t.erkenBitiren} · ${kisaTarih(t.erkenTarih||t.baslangic)}${t.hedefGunAsil?` · asıl hedef ${t.hedefGunAsil} gün`:''}</p>`:''}
         ${t.kapatildi
-          ?`<button class="btn ghost" id="kapatGeri">↩ Kapatmayı Geri Al</button>
+          ?`${kapaliKalmisTanklar().some(x=>x.id===t.id)?`<div class="tersUyari" style="margin-bottom:8px">
+              <div><b>🔧 Bu tank yanlışlıkla kapalı görünüyor</b>
+              <span>Kapatma: ${kisaTarih(t.kapatildi)} · Dolum: ${kisaTarih(t.baslangic)} · ${gun(t)}. gün<br>
+              Yeniden dolduruldu ama eski partiden kalan kapatma işareti duruyor — bu yüzden iş emri çıkmıyor.</span></div>
+              <button class="btn" id="kapatDuzelt">Düzelt ve Programa Al</button>
+            </div>`:''}
+            <button class="btn ghost" id="kapatGeri">↩ Kapatmayı Geri Al</button>
             <p class="hint">Kapatıldı: ${kisaTarih(t.kapatildi)}${t.kapatan?` · ${t.kapatan}${t.kapatmaSaat?' · '+t.kapatmaSaat:''}`:''} — tank dolu, günlük görev üretmiyor</p>`
           :`<button class="btn ghost" id="kapatBtn">🔒 Fermantasyonu Kapat</button>`}
         <button class="btn" id="bosalt">Tankı boşalt</button>`}
@@ -3551,6 +3574,13 @@ function detay(id){
     if(kga) kga.onclick=async()=>{
       delete t.kapatildi; delete t.kapatan; delete t.kapatmaSaat; delete t.kapanisKontrol;
       await tankYaz(); kapat(); ciz(); toast(t.kod+' tekrar açıldı');
+    };
+    const kdz=q('#kapatDuzelt');
+    if(kdz) kdz.onclick=async()=>{
+      delete t.kapatildi; delete t.kapatan; delete t.kapatmaSaat; delete t.kapanisKontrol;
+      delete t.erkenBitiren; delete t.erkenTarih; delete t.hedefDusuk;
+      await tankYaz(); kapat(); ciz();
+      toast(t.kod+' programa alındı — '+gun(t)+'. gün');
     };
   }else{
     q('#geriac').onclick=async()=>{t.bosaltildi='';await tankYaz();detay(id);};
