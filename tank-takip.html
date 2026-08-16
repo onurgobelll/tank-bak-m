@@ -532,7 +532,7 @@ function revYaz(){
     fbIstek('/'+encodeURIComponent(K_REV)+'.json',{method:'PUT', body:JSON.stringify(v)}).catch(()=>{});
   }catch(e){}
 }
-const SURUM='16.08.2026 06:36';
+const SURUM='16.08.2026 14:30';
 let urunHedef={};
 const K_PERSONEL='tanktakip:personel', K_AD_KILIT='tanktakip:cihazKilit';
 /* v3 anahtarları: eski sürümlü cihazlar (eski önbellekli bilgisayar/telefon)
@@ -715,6 +715,13 @@ function diziBirlestir(a, b, anahtar){
 /* Aynı tankın iki kopyasını birleştir: notlar/ölçümler/kimyasallar/log toplanır */
 function tankBirlestir(yerel, bulut){
   if(!bulut) return yerel;
+  /* PARTİ NUMARASI: yeniden doldurma her seferinde artar. Elimdeki parti
+     buluttakinden yeniyse bu tank sıfırdan başlatılmış demektir — buluttaki
+     eski partinin verileriyle BİRLEŞTİRME yapılmaz, yerel olduğu gibi kazanır.
+     (Yoksa sıfırlanan notlar/ölçümler ve silinen "kapatıldı" işareti geri gelir.) */
+  const yParti=+(yerel.parti||1), bParti=+(bulut.parti||1);
+  if(yParti > bParti) return {...yerel};
+  if(bParti > yParti) return {...bulut};
   const t={...bulut, ...yerel};                    // düz alanlarda elimdeki kazanır
   t.notlar2   = diziBirlestir(yerel.notlar2,   bulut.notlar2,   n=>n.id||n.m);
   t.olcumler  = diziBirlestir(yerel.olcumler,  bulut.olcumler,  o=>(o.tarih||'')+'|'+(o.ph||'')+'|'+(o.tuz||'')+'|'+(o.saat||''));
@@ -1287,7 +1294,7 @@ async function acikGuncelle(id){
   if(v===null) return;
   const kalan=String(v).trim()===''? null : (parseInt(String(v).replace(/[^0-9]/g,''),10)||0);
   if(kalan===0){
-    t.bosaltildi=bugunISO(); t.bosaltan=kullaniciAdi()||'—'; t.bosaltmaSaat=saatSimdi(); delete t.acik;
+    t.bosaltildi=bugunISO(); t.bosaltan=kullaniciAdi()||'—'; t.bosaltmaSaat=saatSimdi(); t.acik=null;
     await tankYaz(); kapat(); ciz(); toast(t.kod+' boşaldı'); return;
   }
   t.acik.kalan=kalan; t.acik.sonCekim=bugunISO();
@@ -1402,13 +1409,16 @@ function dolumYaz(t, veri, gecmisiKoru){
     t.olcumler=[]; t.kimyasallar=[]; t.numune2=[]; t.notlar2=[];
   }
   Object.assign(t, veri);
-  delete t.bosaltildi; delete t.bosaltan; delete t.bosaltmaSaat;
-  delete t.temizlendi; delete t.temizleyen; delete t.temizlikSaat;
-  delete t.erkenBitiren; delete t.erkenTarih; delete t.hedefGunAsil; delete t.hedefDusuk;
-  /* YENİ PARTİ: önceki partinin "fermantasyon kapatıldı" durumu silinmeli,
+  /* Silinen alanlar bulut birleştirmesinde geri gelmesin diye BOŞ DEĞER atanır
+     (anahtar yerelde durmalı ki buluttakini ezsin). */
+  t.bosaltildi=''; t.bosaltan=''; t.bosaltmaSaat='';
+  t.temizlendi=''; t.temizleyen=''; t.temizlikSaat='';
+  t.erkenBitiren=''; t.erkenTarih=''; t.hedefGunAsil=''; t.hedefDusuk='';
+  /* YENİ PARTİ: önceki partinin "fermantasyon kapatıldı" durumu temizlenmeli,
      yoksa tank iş emrinde çıkmaz ve durumu hep "hazır" görünür. */
-  delete t.kapatildi; delete t.kapatan; delete t.kapatmaSaat; delete t.kapanisKontrol;
-  delete t.acik; delete t.numune;
+  t.kapatildi=''; t.kapatan=''; t.kapatmaSaat=''; t.kapanisKontrol=null;
+  t.acik=null; t.numune=null;
+  if(!gecmisiKoru) t.parti = (+(t.parti||1)) + 1;   // yeni parti damgası
   t.olcumler=t.olcumler||[]; t.kimyasallar=t.kimyasallar||[]; t.numune2=t.numune2||[];
 }
 function isEmriUret(tarih){
@@ -1657,8 +1667,8 @@ async function yanlisBosaltmaGeriAl(){
   if(!ok) return;
   liste.forEach(t=>{
     const kk=t.kapanisKontrol;
-    delete t.bosaltildi; delete t.bosaltan; delete t.bosaltmaSaat;
-    delete t.temizlendi; delete t.temizleyen; delete t.temizlikSaat;
+    t.bosaltildi=''; t.bosaltan=''; t.bosaltmaSaat='';
+    t.temizlendi=''; t.temizleyen=''; t.temizlikSaat='';
     t.kapatildi=kk.tarih; t.kapatan=kk.kisi; t.kapatmaSaat=kk.saat;
   });
   await tankYaz();
@@ -2537,7 +2547,7 @@ function kapaliKalmisTanklar(){
   });
 }
 async function kapaliKalmisDuzelt(liste){
-  liste.forEach(t=>{ delete t.kapatildi; delete t.kapatan; delete t.kapatmaSaat; delete t.kapanisKontrol; });
+  liste.forEach(t=>{ t.kapatildi=''; t.kapatan=''; t.kapatmaSaat=''; t.kapanisKontrol=null; });
   await tankYaz();
 }
 function tersNumuneler(){
@@ -3090,7 +3100,7 @@ function cizProgram(){
         const s=seri(t);
         const yeniG = ayar[s] || ayar.genel;
         if(!yeniG) return;
-        if(gun(t)>=yeniG) t.hedefDusuk=true; else delete t.hedefDusuk;
+        t.hedefDusuk = gun(t)>=yeniG ? true : '';
         t.hedefGun=yeniG; n++;
       });
       await hedefKaydet();
@@ -3272,10 +3282,11 @@ function form(id){
       const yeniParti = (veri.baslangic && veri.baslangic!==t.baslangic) || (veri.urun && veri.urun!==t.urun);
       Object.assign(t,veri);
       if(yeniParti){
-        delete t.kapatildi; delete t.kapatan; delete t.kapatmaSaat; delete t.kapanisKontrol;
-        delete t.bosaltildi; delete t.bosaltan; delete t.bosaltmaSaat;
-        delete t.temizlendi; delete t.temizleyen; delete t.temizlikSaat;
-        delete t.erkenBitiren; delete t.erkenTarih; delete t.hedefDusuk; delete t.acik;
+        t.kapatildi=''; t.kapatan=''; t.kapatmaSaat=''; t.kapanisKontrol=null;
+        t.bosaltildi=''; t.bosaltan=''; t.bosaltmaSaat='';
+        t.temizlendi=''; t.temizleyen=''; t.temizlikSaat='';
+        t.erkenBitiren=''; t.erkenTarih=''; t.hedefDusuk=''; t.acik=null;
+        t.parti=(+(t.parti||1))+1;
       }
     }
     else tanklar.push({id:'t'+Date.now(),...veri,bosaltildi:'',olcumler:[],kimyasallar:[]});
@@ -3519,7 +3530,7 @@ function detay(id){
     const onay=await onayDialog(t.kod+' — Tankı Boşalt',
       (t.urun||'')+' · '+gun(t)+'. gün\nBu tank boşaltıldı mı? İşlem adınla kaydedilecek.','Boşalt');
     if(!onay) return;
-    t.bosaltildi=bugunISO(); t.bosaltan=kullaniciAdi(); t.bosaltmaSaat=saatSimdi(); delete t.acik;
+    t.bosaltildi=bugunISO(); t.bosaltan=kullaniciAdi(); t.bosaltmaSaat=saatSimdi(); t.acik=null;
     await tankYaz(); kapat(); ciz(); toast(t.kod+' boşaltıldı');
   };
   const pT=q('#pTemiz');
@@ -3557,12 +3568,12 @@ function detay(id){
       const ok=await onayDialog(t.kod+" — Erken Hazır'ı Geri Al",
         'Tank yeniden fermantasyona döner. Hedef gün '+(t.hedefGunAsil||t.hedefGun)+' güne geri alınacak.', 'Geri Al');
       if(!ok) return;
-      if(t.hedefGunAsil){ t.hedefGun=t.hedefGunAsil; delete t.hedefGunAsil; }
-      delete t.erkenBitiren; delete t.erkenTarih;
+      if(t.hedefGunAsil){ t.hedefGun=t.hedefGunAsil; t.hedefGunAsil=''; }
+      t.erkenBitiren=''; t.erkenTarih='';
       await tankYaz(); detay(id); toast(t.kod+' yeniden aktif');
     };
     q('#bosalt').onclick=async()=>{
-      t.bosaltildi=bugunISO(); t.bosaltan=kullaniciAdi()||'Yönetici'; t.bosaltmaSaat=saatSimdi(); delete t.acik;
+      t.bosaltildi=bugunISO(); t.bosaltan=kullaniciAdi()||'Yönetici'; t.bosaltmaSaat=saatSimdi(); t.acik=null;
       await tankYaz();kapat();ciz();toast(t.kod+' boşaltıldı');};
     const kpt=q('#kapatBtn');
     if(kpt) kpt.onclick=async()=>{
@@ -3572,13 +3583,13 @@ function detay(id){
     };
     const kga=q('#kapatGeri');
     if(kga) kga.onclick=async()=>{
-      delete t.kapatildi; delete t.kapatan; delete t.kapatmaSaat; delete t.kapanisKontrol;
+      t.kapatildi=''; t.kapatan=''; t.kapatmaSaat=''; t.kapanisKontrol=null;
       await tankYaz(); kapat(); ciz(); toast(t.kod+' tekrar açıldı');
     };
     const kdz=q('#kapatDuzelt');
     if(kdz) kdz.onclick=async()=>{
-      delete t.kapatildi; delete t.kapatan; delete t.kapatmaSaat; delete t.kapanisKontrol;
-      delete t.erkenBitiren; delete t.erkenTarih; delete t.hedefDusuk;
+      t.kapatildi=''; t.kapatan=''; t.kapatmaSaat=''; t.kapanisKontrol=null;
+      t.erkenBitiren=''; t.erkenTarih=''; t.hedefDusuk='';
       await tankYaz(); kapat(); ciz();
       toast(t.kod+' programa alındı — '+gun(t)+'. gün');
     };
@@ -3616,13 +3627,13 @@ function detay(id){
   };
   const tg=q('#temizGeri');
   if(tg) tg.onclick=async()=>{
-    delete t.temizlendi; delete t.temizleyen; delete t.temizlikSaat;
+    t.temizlendi=''; t.temizleyen=''; t.temizlikSaat='';
     await tankYaz(); detay(id); toast('Temizlik geri alındı');
   };
   const tdv=q('#t_devKaydet');
   if(tdv) tdv.onclick=async()=>{
     const v=q('#t_dev').value.trim();
-    if(v) t.devSure=v; else delete t.devSure;
+    t.devSure = v || '';
     await tankYaz();
     detay(id);
     toast(v? t.kod+' devirdaim: '+v+' saat' : t.kod+' seri varsayılanına döndü');
@@ -4523,7 +4534,7 @@ function qrOlustur(){
       q('#qSonuc').insertAdjacentHTML('beforeend',
         '<button class="btn ghost" id="q_sifirla">Bu listeyi "basılmadı" yap</button>');
       q('#q_sifirla').onclick=async()=>{
-        liste.forEach(x=>{ const t=tanklar.find(tk=>tk.kod===x.kod); if(t) delete t.qrBasildi; });
+        liste.forEach(x=>{ const t=tanklar.find(tk=>tk.kod===x.kod); if(t) t.qrBasildi=''; });
         await tankYaz(); toast('Basılmadı olarak işaretlendi'); kapat(); qrOlustur();
       };
     }
