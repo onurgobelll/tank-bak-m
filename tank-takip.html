@@ -532,7 +532,7 @@ function revYaz(){
     fbIstek('/'+encodeURIComponent(K_REV)+'.json',{method:'PUT', body:JSON.stringify(v)}).catch(()=>{});
   }catch(e){}
 }
-const SURUM='16.08.2026 14:30';
+const SURUM='17.08.2026 05:04';
 let urunHedef={};
 const K_PERSONEL='tanktakip:personel', K_AD_KILIT='tanktakip:cihazKilit';
 /* v3 anahtarları: eski sürümlü cihazlar (eski önbellekli bilgisayar/telefon)
@@ -1511,6 +1511,41 @@ async function numuneSil(id, mid){
   if(!onayYetkisi()) return;
   t.numune2=numuneListe(t).filter(x=>x.id!==mid);
   await tankYaz();
+}
+/* Tankın N. gününe denk gelen takvim tarihi */
+function gunTarihi(t, g){
+  const d=new Date(String(t.baslangic)+'T00:00');
+  if(isNaN(d)) return '';
+  d.setDate(d.getDate() + (g-1));
+  return d.toISOString().slice(0,10);
+}
+/* ATLANAN GÖREV TARAMASI — gün sınırı yok.
+   Programda tanımlı ama tankın o gününde onaylanmamış tüm görevleri bulur.
+   Programa sonradan görev eklendiğinde, o günü çoktan geçmiş tanklar da çıkar. */
+function atlananGorevler(gorevKodu, urunFiltre){
+  const out=[];
+  tanklar.forEach(t=>{
+    if(t.bosaltildi) return;
+    if(urunFiltre && urunFiltre!=='hepsi' && (t.urun||'—')!==urunFiltre) return;
+    const up=program[programUrun(t.urun)];
+    if(!up) return;
+    const bugunG=gun(t);
+    const s=seri(t);
+    Object.keys(up).map(Number).filter(g=>!isNaN(g)).sort((a,b)=>a-b).forEach(g=>{
+      if(g>bugunG) return;                       // bu güne daha gelmedi
+      const pr=up[g]; if(!pr) return;
+      const kodlar=pr.g||[];
+      const kabul = gorevKodu==='DEV' ? kodlar.some(k=>DEVIR_KODLARI.includes(k)) : kodlar.includes(gorevKodu);
+      if(!kabul) return;
+      const gercekKod = gorevKodu==='DEV' ? kodlar.find(k=>DEVIR_KODLARI.includes(k)) : gorevKodu;
+      const tarih=gunTarihi(t,g);
+      if(!tarih) return;
+      if((isemri[tarih]||{})[t.id+':'+gercekKod]) return;   // zaten onaylı
+      out.push({t, gun:g, tarih, kod:gercekKod,
+        tuzKg: gercekKod==='T' ? (pr.tuz && pr.tuz[s]) || null : null});
+    });
+  });
+  return out.sort((a,b)=> (gun(b.t)-b.gun) - (gun(a.t)-a.gun) || a.t.kod.localeCompare(b.t.kod,'tr',{numeric:true}));
 }
 function gecikenIsler(bugunTarih, gunGeri){
   const out=[];
@@ -2757,7 +2792,25 @@ function cizProgram(){
   ${Object.entries(urunEslesme).map(([u,k])=>`
     <div class="log"><span class="d">↳</span><span class="v"><b>${u}</b> → ${k}
       ${yonetici?`<button class="icon" data-esKaldir="${u}" style="margin-left:8px;padding:4px 9px;font-size:11px">Kaldır</button>`:''}</span></div>`).join('')}`:''}
-  ${yonetici?`<div class="sec">Numune Alma Ayarları</div>
+  ${yonetici?`<div class="sec">Atlanan Görev Tarama</div>
+  <div class="grafKutu">
+    <p class="hint" style="margin:0 0 8px">Programa sonradan görev eklediğinde, o günü çoktan geçmiş tanklar iş emrinde çıkmaz. Burada <b>gün sınırı olmadan</b> tüm atlanan görevleri bulursun.</p>
+    <div class="two">
+      <div><label>Görev</label>
+        <select id="agGorev">
+          <option value="T">Tuz</option>
+          <option value="DEV">Devirdaim</option>
+          <option value="U">Ürün Kontrol</option>
+          <option value="B">Bakım Suyu</option>
+          <option value="M">Maya</option>
+        </select></div>
+      <div><label>Ürün</label>
+        <select id="agUrun"><option value="hepsi">Tümü</option>${urunler().map(u=>`<option>${u}</option>`).join('')}</select></div>
+    </div>
+    <button class="btn ghost" id="agTara" style="margin-top:10px">Atlananları Bul</button>
+    <div id="agSonuc"></div>
+  </div>
+  <div class="sec">Numune Alma Ayarları</div>
   <div class="grafKutu">
     <p class="hint" style="margin:0 0 8px">Hangi ürünlerde numune takip edilsin? Seçili olmayan ürünlerin tankları listede çıkmaz.</p>
     <div class="tags" id="numUrunSec">
@@ -2819,6 +2872,51 @@ function cizProgram(){
     ${yonetici?`<button class="btn ghost" id="persEkle" style="margin-top:10px">+ Personel Ekle</button>`:''}
   </div>
   <p class="hint">Seri harfi = tank kodunun ilk harfi (A–E). Tuz kg değerleri ve devirdaim süreleri seriye göre uygulanır.</p>`;
+  const agT=document.getElementById('agTara');
+  if(agT) agT.onclick=()=>{
+    const gk=document.getElementById('agGorev').value;
+    const uf=document.getElementById('agUrun').value;
+    const alan=document.getElementById('agSonuc');
+    const liste=atlananGorevler(gk,uf);
+    const gorevAd = gk==='DEV'?'Devirdaim':(GOREV[gk]||gk);
+    if(!liste.length){
+      alan.innerHTML='<p class="hint" style="color:var(--yesil)">✓ '+gorevAd+' için atlanan görev yok.</p>';
+      return;
+    }
+    /* Programdaki güne göre grupla — hangi günde kaç tank atlanmış */
+    const gunGrup={};
+    liste.forEach(x=>{ gunGrup[x.gun]=(gunGrup[x.gun]||0)+1; });
+    const tuzTop=liste.reduce((n,x)=>n+(x.tuzKg||0),0);
+    alan.innerHTML=
+      '<p class="hint" style="color:var(--alarm);margin-top:10px"><b>'+liste.length+' atlanan '+gorevAd+' görevi</b>'
+      + (tuzTop?' · toplam <b>'+tuzTop+' kg tuz</b>':'')+'</p>'
+      + '<p class="hint">'+Object.entries(gunGrup).sort((a,b)=>a[0]-b[0]).map(([g,n])=>`<b>${g}. gün</b>: ${n} tank`).join(' · ')+'</p>'
+      + liste.slice(0,60).map(x=>`<div class="log"><span class="d">${x.t.kod}</span><span class="v">${x.gun}. gün · ${x.t.urun||'—'}${x.tuzKg?' · <b>'+x.tuzKg+' kg</b>':''}
+          <span class="n">şu an ${gun(x.t)}. gün · ${kisaTarih(x.tarih)} tarihinde yapılmalıydı</span></span></div>`).join('')
+      + (liste.length>60?`<p class="hint">… ve ${liste.length-60} kayıt daha</p>`:'')
+      + '<div class="two" style="margin-top:10px">'
+      + '<button class="btn ghost" id="agPaylas">📋 Listeyi Paylaş</button>'
+      + '<button class="btn" id="agOnayla">Tümünü Yapıldı İşaretle</button></div>'
+      + '<p class="hint">Onaylarsan her görev kendi tarihine yazılır, geçmiş raporlar doğru kalır.</p>';
+    document.getElementById('agPaylas').onclick=()=>{
+      const metin=gorevAd+' — atlanan görevler ('+liste.length+')\n'
+        + (tuzTop?'Toplam tuz: '+tuzTop+' kg\n':'') + '\n'
+        + liste.map(x=>x.t.kod+'  '+x.gun+'. gün  '+(x.t.urun||'')+(x.tuzKg?'  '+x.tuzKg+' kg':'')+'  (şu an '+gun(x.t)+'. gün)').join('\n');
+      if(navigator.share) navigator.share({title:gorevAd+' atlananlar', text:metin}).catch(()=>{});
+      else { try{ navigator.clipboard.writeText(metin); toast('Liste kopyalandı'); }catch(e){ toast('Kopyalanamadı'); } }
+    };
+    document.getElementById('agOnayla').onclick=async()=>{
+      const ok=await onayDialog('Atlanan Görevleri Onayla',
+        liste.length+' '+gorevAd+' görevi yapıldı olarak işaretlenecek.\nHer kayıt kendi tarihine yazılır.','Onayla');
+      if(!ok) return;
+      const ad=kullaniciAdi()||'Yönetici', sa=saatSimdi();
+      liste.forEach(x=>{
+        const d=isemri[x.tarih]=isemri[x.tarih]||{};
+        d[x.t.id+':'+x.kod]={k:ad, s:sa+' (sonradan)'};
+      });
+      await isemriYaz(); cizProgram(); toast(liste.length+' görev onaylandı');
+    };
+  };
   let numUrunSecili = new Set(numuneUrunleri());
   document.querySelectorAll('#numUrunSec .tag').forEach(b=>{
     b.onclick=()=>{
