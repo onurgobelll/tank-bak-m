@@ -537,7 +537,7 @@ function revYaz(){
     fbIstek('/'+encodeURIComponent(K_REV)+'.json',{method:'PUT', body:JSON.stringify(v)}).catch(()=>{});
   }catch(e){}
 }
-const SURUM='18.08.2026 12:12';
+const SURUM='18.08.2026 19:42';
 let urunHedef={};
 const K_PERSONEL='tanktakip:personel', K_AD_KILIT='tanktakip:cihazKilit';
 /* v3 anahtarları: eski sürümlü cihazlar (eski önbellekli bilgisayar/telefon)
@@ -772,7 +772,11 @@ async function eskiAlandanTopla(){
         sonuc.olcum += Math.max(0,(t.olcumler||[]).length-oncekiO);
       });
     }
-  }catch(e){}
+  }catch(e){
+    /* Bu fonksiyon eski cihazlardaki verileri kurtarıyor — sessiz kalırsa
+       "veriler kayboldu" şikayeti geri gelir ama sebebi görünmez. */
+    console.error('eskiAlandanTopla başarısız:', e);
+  }
   return sonuc;
 }
 async function tankYaz(){
@@ -1143,7 +1147,10 @@ async function fotoGetir(fotoId){
 }
 async function fotoSil(fotoId){
   if(!fotoId) return;
-  try{ await fbIstek('/'+encodeURIComponent(K_FOTO_ON+fotoId)+'.json', {method:'DELETE'}); }catch(e){}
+  /* Sessiz kalırsa fotoğraf bulutta yetim kalır, kullanıcı fark etmez.
+     Kritik değil ama console'a iz bırakmakta fayda var. */
+  try{ await fbIstek('/'+encodeURIComponent(K_FOTO_ON+fotoId)+'.json', {method:'DELETE'}); }
+  catch(e){ console.error('fotoSil başarısız:', fotoId, e); }
 }
 async function fotoGoster(fotoId){
   const ov=document.createElement('div');
@@ -1398,6 +1405,8 @@ function dolumYaz(t, veri, gecmisiKoru){
     /* ÖNCEKİ PARTİYİ TAM ARŞİVLE — ölçümler, numuneler, notlar, kimyasallar
        hepsi gecmis[] içinde saklanır; aktif tankta sıfırdan başlanır. */
     if(t.urun||t.baslangic){
+      /* Tuz toplamı, eski urun/baslangic hâlâ üstteyken (Object.assign'dan önce) hesaplanmalı */
+      const tz=tankToplamTuz(t);
       (t.gecmis=t.gecmis||[]).unshift({
         urun:t.urun, baslangic:t.baslangic, bitis:t.bosaltildi||bugunISO(),
         kapasite:t.kapasite,
@@ -1406,6 +1415,7 @@ function dolumYaz(t, veri, gecmisiKoru){
         numuneArsiv: (Array.isArray(t.numune2)    && t.numune2.length)    ? t.numune2    : undefined,
         notArsiv:    (Array.isArray(t.notlar2)    && t.notlar2.length)    ? t.notlar2    : undefined,
         kimyasalArsiv:(Array.isArray(t.kimyasallar)&&t.kimyasallar.length)? t.kimyasallar: undefined,
+        tuzToplamKg: tz.adet? tz.toplamKg : undefined, tuzAdet: tz.adet||undefined,
         kapatildi:t.kapatildi||'', bosaltan:t.bosaltan||''
       });
       if(t.gecmis.length>20) t.gecmis.length=20;
@@ -2617,6 +2627,7 @@ function numuneSapmaVar(m){
   return disinda(m.ph,n.ph) || disinda(m.tuz,n.tuz) || disinda(m.asit,n.asit);
 }
 let anUrun='hepsi', anSirala='sapma';
+let progGrup='urun';   // 'urun' | 'kalite' | 'sistem' — Program ekranının alt sekmesi
 function cizAnaliz(){
   const e=document.getElementById('ekran');
   document.getElementById('hdr').innerHTML=`
@@ -2668,6 +2679,7 @@ function cizAnaliz(){
       ${kayitlar.length} tank numunelendi${sapanSay?` · <b style="color:var(--alarm)">${sapanSay} tank normal aralık dışında</b>`:' · hepsi normal aralıkta'}
       ${numsuzTanklar.length?` · <a href="#" id="anNumsuzGit" style="color:var(--mavi)">ayrıca ${numsuzTanklar.length} tankta hiç numune yok →</a>`:''}
     </p>
+    ${(numsuzTanklar.length||sapanSay)?`<button class="btn ghost" id="anRaporBtn" style="margin-bottom:10px">📋 Eksik + Uygunsuz Tank Raporu</button>`:''}
     <div class="chips" id="anUrunChips" style="margin-top:10px">
       <button class="chip" data-au="hepsi" aria-pressed="${anUrun==='hepsi'}">Tümü<b>${kayitlar.length}</b></button>
       ${urunAdlari.map(u=>`<button class="chip" data-au="${u}" aria-pressed="${anUrun===u}">${u}<b>${numluTanklar.filter(t=>t.urun===u).length}</b></button>`).join('')}
@@ -2705,6 +2717,42 @@ function cizAnaliz(){
     await tersleriDuzelt(ters);
     cizAnaliz(); toast(ters.length+' kayıt düzeltildi');
   };
+  const arb=document.getElementById('anRaporBtn');
+  if(arb) arb.onclick=()=>{
+    const bug=bugunISO();
+    const eksikSatirlar=numsuzTanklar
+      .slice().sort((a,b)=>gun(b)-gun(a))
+      .map(t=>t.kod+'  '+(t.urun||'—')+'  '+gun(t)+'. gün  — hiç numune alınmamış');
+    const uygunsuzSatirlar=kayitlar.filter(x=>numuneSapmaVar(x.m))
+      .sort((a,b)=>gun(b.t)-gun(a.t))
+      .map(x=>x.t.kod+'  '+(x.t.urun||'—')+'  '+(x.m.ph?'pH '+x.m.ph+' ':'')+(x.m.tuz?'Tuz '+x.m.tuz+'% ':'')+(x.m.asit?'Asit '+x.m.asit+'% ':'')+' — normal aralık dışı ('+kisaTarih(x.m.tarih)+')');
+    const metin='Numune Eksik + Uygunsuz Tank Raporu — '+kisaTarih(bug)+'\n\n'
+      + 'NUMUNE ALINMAMIŞ ('+eksikSatirlar.length+' tank)\n'
+      + (eksikSatirlar.length? eksikSatirlar.join('\n') : '(yok)')
+      + '\n\nNORMAL ARALIK DIŞI ('+uygunsuzSatirlar.length+' tank)\n'
+      + (uygunsuzSatirlar.length? uygunsuzSatirlar.join('\n') : '(yok)');
+    const kutu=document.createElement('div');
+    kutu.className='grafKutu';
+    kutu.style.marginBottom='10px';
+    kutu.innerHTML='<div class="sec" style="margin-top:0">Rapor</div>'
+      +'<div class="sec">Numune Alınmamış ('+eksikSatirlar.length+')</div>'
+      + (eksikSatirlar.length? numsuzTanklar.slice().sort((a,b)=>gun(b)-gun(a)).map(t=>
+          `<div class="log"><span class="d">${t.kod}</span><span class="v">${t.urun||'—'} · ${gun(t)}. gün</span></div>`).join('')
+        : '<p class="hint">Numunesiz tank yok.</p>')
+      + '<div class="sec">Normal Aralık Dışı ('+uygunsuzSatirlar.length+')</div>'
+      + (uygunsuzSatirlar.length? kayitlar.filter(x=>numuneSapmaVar(x.m)).sort((a,b)=>gun(b.t)-gun(a.t)).map(x=>
+          `<div class="log"><span class="d">${x.t.kod}</span><span class="v">${x.t.urun||'—'} · ${x.m.ph?'pH '+x.m.ph+' · ':''}${x.m.tuz?'Tuz '+x.m.tuz+'% · ':''}${x.m.asit?'Asit '+x.m.asit+'%':''} <span class="n">${kisaTarih(x.m.tarih)}</span></span></div>`).join('')
+        : '<p class="hint">Sınır dışı tank yok.</p>')
+      + '<button class="btn ghost" id="anRaporPaylas" style="margin-top:10px">📋 Paylaş</button>';
+    const eskiRapor=document.getElementById('anRaporKutusu');
+    if(eskiRapor) eskiRapor.remove();
+    kutu.id='anRaporKutusu';
+    arb.insertAdjacentElement('afterend', kutu);
+    document.getElementById('anRaporPaylas').onclick=()=>{
+      if(navigator.share) navigator.share({title:'Numune Raporu', text:metin}).catch(()=>{});
+      else { try{ navigator.clipboard.writeText(metin); toast('Rapor kopyalandı'); }catch(e){ toast('Kopyalanamadı'); } }
+    };
+  };
   const ng=document.getElementById('anNumsuzGit');
   if(ng) ng.onclick=(ev)=>{ ev.preventDefault(); gorunum='isemri'; ieGorev='NUMUNE'; ciz(); };
   document.querySelectorAll('.anTekrarBtn').forEach(b=>b.onclick=async()=>{
@@ -2720,7 +2768,16 @@ function cizProgram(){
   if(!progUrun||!us.includes(progUrun)) progUrun=us[0];
   document.getElementById('hdr').innerHTML=`
     <div class="top"><h1>Program</h1><button class="icon" id="btnSenk">🔄</button>${yonetici?'<button class="icon" id="pYeni">+ Ürün</button><button class="icon" id="pSifirla">Varsayılan</button>':''}<button class="icon" id="btnKilit">${yonetici?'🔓':'🔒'}</button></div>
-    <div class="chips">${us.map(u=>`<button class="chip" data-u="${u}" aria-pressed="${progUrun===u}">${u}</button>`).join('')}</div>`;
+    <div class="chips" id="progGrupChips">
+      <button class="chip" data-pg="urun" aria-pressed="${progGrup==='urun'}">Ürün Ayarları</button>
+      <button class="chip" data-pg="kalite" aria-pressed="${progGrup==='kalite'}">Kalite</button>
+      <button class="chip" data-pg="sistem" aria-pressed="${progGrup==='sistem'}">Sistem</button>
+    </div>
+    <div class="chips" id="progUrunChips" style="${progGrup==='urun'?'':'display:none'}">${us.map(u=>`<button class="chip" data-u="${u}" aria-pressed="${progUrun===u}">${u}</button>`).join('')}</div>`;
+  document.getElementById('progGrupChips').onclick=e=>{
+    const b=e.target.closest('[data-pg]'); if(!b) return;
+    progGrup=b.dataset.pg; cizProgram();
+  };
   if(yonetici){
     document.getElementById('pSifirla').onclick=async()=>{
       if(!confirm('Tüm program varsayılana (Excel şablonu) dönsün mü?')) return;
@@ -2762,7 +2819,7 @@ function cizProgram(){
     </button>`;
   }).join(''):'<div class="empty"><b>Program boş</b>Bu ürüne gün ekle.</div>')+
   (yonetici?`<button class="btn ghost" id="gunEkle">+ Gün ekle</button>`:'')+
-  `<div class="sec">Hedef Gün — ${progUrun}<small style="float:right;font-size:12px">seriye göre</small></div>
+  `<div class="sec pg-urun">Hedef Gün — ${progUrun}<small style="float:right;font-size:12px">seriye göre</small></div>
   <div class="grafKutu">
     ${(()=>{const a=hedefAyar(progUrun);const akt=tanklar.filter(t=>!t.bosaltildi&&t.urun===progUrun);
       const seriSay={};akt.forEach(t=>{const s=seri(t);seriSay[s]=(seriSay[s]||0)+1;});
@@ -2779,11 +2836,11 @@ function cizProgram(){
       <p class="hint">İşaret kaldırılırsa yalnızca bundan sonraki dolumlar etkilenir. Boş seri "Genel" değeri kullanır. Erken hazır işaretliler korunur.</p>`
       :'<p class="hint" style="margin:8px 0 0">Değiştirmek için yönetici girişi gerekli.</p>'}
   </div>
-  <div class="sec">Devirdaim Süreleri<small style="float:right;font-size:12px">seriye göre, saat (sabah+akşam)</small></div>
+  <div class="sec pg-urun">Devirdaim Süreleri<small style="float:right;font-size:12px">seriye göre, saat (sabah+akşam)</small></div>
   <div class="tuzgrid">${['A','B','C','D','E'].map(s=>
     `<div><label>${s}</label><input id="dv${s}" value="${devirdaimSure[s]||''}" placeholder="2+2" ${yonetici?'':'disabled'}></div>`).join('')}</div>
   ${yonetici?`<button class="btn ghost" id="dvKaydet">Süreleri Kaydet</button>`:''}
-  ${yonetici?`<div class="sec">Program Şablonu<small style="float:right;font-size:12px">Excel/CSV</small></div>
+  ${yonetici?`<div class="sec pg-urun">Program Şablonu<small style="float:right;font-size:12px">Excel/CSV</small></div>
   <div class="grafKutu">
     <div class="two">
       <button class="btn ghost" id="sabIndir" style="margin-top:0">📥 Şablon İndir</button>
@@ -2792,12 +2849,12 @@ function cizProgram(){
     <input type="file" id="sabDosya" accept=".csv,text/csv" style="display:none">
     <p class="hint">İndir → Excel'de düzenle → Yükle. Satır ekleyip silebilirsin; yükleme mevcut programın yerine geçer.</p>
   </div>`:''}
-  ${Object.keys(urunEslesme).length?`<div class="sec">Bağlı Ürünler</div>
+  ${Object.keys(urunEslesme).length?`<div class="sec pg-urun">Bağlı Ürünler</div>
   <p class="hint">Bu ürünlerin kendi programı yok, başka ürünün programını kullanıyor:</p>
   ${Object.entries(urunEslesme).map(([u,k])=>`
     <div class="log"><span class="d">↳</span><span class="v"><b>${u}</b> → ${k}
       ${yonetici?`<button class="icon" data-esKaldir="${u}" style="margin-left:8px;padding:4px 9px;font-size:11px">Kaldır</button>`:''}</span></div>`).join('')}`:''}
-  ${yonetici?`<div class="sec">Atlanan Görev Tarama</div>
+  ${yonetici?`<div class="sec pg-kalite">Atlanan Görev Tarama</div>
   <div class="grafKutu">
     <p class="hint" style="margin:0 0 8px">Programa sonradan görev eklediğinde, o günü çoktan geçmiş tanklar iş emrinde çıkmaz. Burada <b>gün sınırı olmadan</b> tüm atlanan görevleri bulursun.</p>
     <div class="two">
@@ -2815,7 +2872,7 @@ function cizProgram(){
     <button class="btn ghost" id="agTara" style="margin-top:10px">Atlananları Bul</button>
     <div id="agSonuc"></div>
   </div>
-  <div class="sec">Numune Alma Ayarları</div>
+  <div class="sec pg-kalite">Numune Alma Ayarları</div>
   <div class="grafKutu">
     <p class="hint" style="margin:0 0 8px">Hangi ürünlerde numune takip edilsin? Seçili olmayan ürünlerin tankları listede çıkmaz.</p>
     <div class="tags" id="numUrunSec">
@@ -2838,13 +2895,13 @@ function cizProgram(){
     </div>
     <button class="btn ghost" id="numAyarKaydet" style="margin-top:10px">Kaydet</button>
   </div>
-  <div class="sec">Tarih Denetimi</div>
+  <div class="sec pg-sistem">Tarih Denetimi</div>
   <div class="grafKutu">
     <p class="hint" style="margin:0">Dolum tarihi şüpheli görünen tankları listeler; tek dokunuşla bugüne çekebilirsin.</p>
     <button class="btn ghost" id="tarihDenetle" style="margin-top:10px">Şüpheli Tarihleri Bul</button>
     <div id="tarihSonuc"></div>
   </div>
-  <div class="sec">Kayıp Tank Kurtarma</div>
+  <div class="sec pg-sistem">Kayıp Tank Kurtarma</div>
   <div class="grafKutu">
     <p class="hint" style="margin:0">Tank listesinin günlük yedeği buluta alınır. Bir tank kaybolduysa buradan geri getirebilirsin.</p>
     <button class="btn ghost" id="kayipBul" style="margin-top:10px">Kayıp Tank Var mı? Kontrol Et</button>
@@ -2852,13 +2909,13 @@ function cizProgram(){
     <button class="btn ghost" id="veriKontrol" style="margin-top:8px">🔍 Veri Kontrolü (eksik var mı?)</button>
     <div id="kayipSonuc"></div>
   </div>`:''}
-  <div class="sec">Uygulama Sürümü</div>
+  <div class="sec pg-sistem">Uygulama Sürümü</div>
   <div class="grafKutu">
     <p class="hint" style="margin:0">Yüklü sürüm: <b>${SURUM}</b></p>
     <button class="btn ghost" id="zorlaGuncelle" style="margin-top:10px">🔄 Güncellemeyi Zorla (önbelleği temizle)</button>
     <p class="hint">Yeni sürüm yüklediysen ve değişiklik görünmüyorsa buna dokun.</p>
   </div>
-  <div class="sec">Bulut Bağlantısı</div>
+  <div class="sec pg-sistem">Bulut Bağlantısı</div>
   <div class="grafKutu">
     <p class="hint" style="margin:0">${!FIREBASE_URL?'<b style="color:var(--alarm)">Adres tanımlı değil</b> — veriler sadece bu telefonda.'
       :(bulutDurum.okuma===false||bulutDurum.yazma===false)
@@ -2868,7 +2925,7 @@ function cizProgram(){
     ${yonetici?`<button class="btn ghost" id="bulutGonder" style="margin-top:8px">⬆ Bu Cihazdaki Programı Buluta Gönder</button>
     <p class="hint">Buluttaki programın üzerine bu telefondakini yazar. Diğer cihazlar eski veriyi gösteriyorsa kullan.</p>`:''}
   </div>
-  <div class="sec">Personel &amp; Cihaz</div>
+  <div class="sec pg-sistem">Personel &amp; Cihaz</div>
   <div class="grafKutu" id="persKutu">
     <p class="hint" style="margin:0 0 8px">Bu cihaz: <b style="color:var(--ink)">${cihazSahibi()||'atanmamış'}</b>${cihazAtandiMi()?' (kilitli)':''}</p>
     ${personel.length?personel.map(ad=>`<div class="istSatir"><b>${ad}</b>
@@ -2877,6 +2934,30 @@ function cizProgram(){
     ${yonetici?`<button class="btn ghost" id="persEkle" style="margin-top:10px">+ Personel Ekle</button>`:''}
   </div>
   <p class="hint">Seri harfi = tank kodunun ilk harfi (A–E). Tuz kg değerleri ve devirdaim süreleri seriye göre uygulanır.</p>`;
+  /* Alt-sekme filtresi: her ".sec" başlığından bir sonraki ".sec"e kadar olan
+     kardeşleri, başlığın data-pg grubuna göre gizle/göster. Gün programı bloğu
+     (ilk .sec'ten önceki her şey) her zaman "urun" grubunda sayılır. */
+  (()=>{
+    const ekranEl=document.getElementById('ekran');
+    const secler=[...ekranEl.querySelectorAll('.sec')];
+    // ilk sec'ten önceki üst düzey elemanlar (program listesi, + gün ekle) her zaman urun grubunda
+    let once=true;
+    [...ekranEl.children].forEach(el=>{
+      if(el.classList.contains('sec')){ once=false; return; }
+      if(once) el.style.display = (progGrup==='urun') ? '' : 'none';
+    });
+    secler.forEach((sec,i)=>{
+      const grup=['pg-urun','pg-kalite','pg-sistem'].map(cl=>cl.replace('pg-',''))
+        .find(g=>sec.classList.contains('pg-'+g)) || 'urun';
+      const goster = (grup===progGrup);
+      sec.style.display = goster?'':'none';
+      let sib=sec.nextElementSibling;
+      while(sib && !sib.classList.contains('sec')){
+        sib.style.display = goster?'':'none';
+        sib=sib.nextElementSibling;
+      }
+    });
+  })();
   const agT=document.getElementById('agTara');
   if(agT) agT.onclick=()=>{
     const gk=document.getElementById('agGorev').value;
@@ -3141,7 +3222,8 @@ function cizProgram(){
       'Tamam');
     cizProgram();
   };
-  document.getElementById('hdr').querySelector('.chips').onclick=e=>{
+  const puc=document.getElementById('progUrunChips');
+  if(puc) puc.onclick=e=>{
     const b=e.target.closest('.chip'); if(b){progUrun=b.dataset.u;cizProgram();}
   };
   const pk=document.getElementById('persKutu');
@@ -3243,7 +3325,7 @@ function programGun(d){
       `<button class="tag" data-g="${k}" aria-pressed="${(p.g||[]).includes(k)}">${GOREV_PROG[k]}</button>`).join('')}</div>
     <label>Tuz miktarı (kg, seriye göre)</label>
     <div class="tuzgrid">${['A','B','C','D','E'].map(s=>
-      `<div><label>${s}</label><input type="number" id="tz${s}" inputmode="numeric" value="${p.tuz&&p.tuz[s]||''}"></div>`).join('')}</div>
+      `<div><label>${s}</label><input type="text" id="tz${s}" inputmode="decimal" value="${p.tuz&&p.tuz[s]||''}"></div>`).join('')}</div>
     <button class="btn" id="pKaydet">Kaydet</button>
     <button class="btn danger" id="pSil">Bu günü programdan sil</button>
   `);
@@ -3254,7 +3336,7 @@ function programGun(d){
   pn.querySelector('#pKaydet').onclick=async()=>{
     const g=[...pn.querySelectorAll('.tag[aria-pressed="true"]')].map(b=>b.dataset.g);
     const tuz={};
-    ['A','B','C','D','E'].forEach(s=>{const v=+pn.querySelector('#tz'+s).value;if(v)tuz[s]=v;});
+    ['A','B','C','D','E'].forEach(s=>{const v=ondalikSayi(pn.querySelector('#tz'+s).value);if(!isNaN(v)&&v)tuz[s]=v;});
     up[d]={g,tuz};
     program=programNormalize(program);
     await progKaydet(); kapat(); cizProgram(); toast(d+'. gün kaydedildi · diğer cihazlara gidiyor');
@@ -3499,12 +3581,12 @@ function detay(id){
     ${t.bosaltildi?'':(yonetici?`
       <h3>Ölçüm ekle</h3>
       <div class="two">
-        <div><label>pH</label><input type="number" step="0.01" id="o_ph" inputmode="decimal"></div>
-        <div><label>Tuz %</label><input type="number" step="0.1" id="o_tuz" inputmode="decimal"></div>
+        <div><label>pH</label><input type="text" id="o_ph" inputmode="decimal"></div>
+        <div><label>Tuz %</label><input type="text" id="o_tuz" inputmode="decimal"></div>
       </div>
       <div class="two" style="margin-top:8px">
-        <div><label>Asit %</label><input type="number" step="0.01" id="o_asit" inputmode="decimal"></div>
-        <div><label>°C</label><input type="number" step="0.1" id="o_sic" inputmode="decimal"></div>
+        <div><label>Asit %</label><input type="text" id="o_asit" inputmode="decimal"></div>
+        <div><label>°C</label><input type="text" id="o_sic" inputmode="decimal"></div>
       </div>
       <input id="o_not" placeholder="Köpük, koku, tuz takviyesi…" style="margin-top:10px">
       <button class="btn" id="o_kaydet">Ölçümü kaydet</button>`:'')}
@@ -3554,6 +3636,7 @@ function detay(id){
             ${(g.olcumArsiv&&g.olcumArsiv.length)?`<span class="gArsivRozet">📊 ${g.olcumArsiv.length} ölçüm</span>`:(g.olcumSayi?`<span class="gArsivRozet">📊 ${g.olcumSayi} ölçüm</span>`:'')}
             ${(g.notArsiv&&g.notArsiv.length&&yonetici)?`<span class="gArsivRozet">📝 ${g.notArsiv.length} not</span>`:''}
             ${(g.kimyasalArsiv&&g.kimyasalArsiv.length)?`<span class="gArsivRozet">⚗ ${g.kimyasalArsiv.length} kimyasal</span>`:''}
+            ${g.tuzToplamKg?`<span class="gArsivRozet">🧂 ${g.tuzToplamKg} kg tuz (${g.tuzAdet}x)</span>`:''}
           </div>
           ${((g.numuneArsiv&&g.numuneArsiv.length)||(g.olcumArsiv&&g.olcumArsiv.length)||(g.notArsiv&&g.notArsiv.length&&yonetici))?`
           <details style="margin-top:7px">
