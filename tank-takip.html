@@ -537,7 +537,7 @@ function revYaz(){
     fbIstek('/'+encodeURIComponent(K_REV)+'.json',{method:'PUT', body:JSON.stringify(v)}).catch(()=>{});
   }catch(e){}
 }
-const SURUM='18.08.2026 19:42';
+const SURUM='22.08.2026 06:17';
 let urunHedef={};
 const K_PERSONEL='tanktakip:personel', K_AD_KILIT='tanktakip:cihazKilit';
 /* v3 anahtarları: eski sürümlü cihazlar (eski önbellekli bilgisayar/telefon)
@@ -893,6 +893,14 @@ function kullaniciAdi(){
   const y=(prompt('Adın ne? (onaylarda görünecek)')||'').trim();
   if(y){ try{ localStorage.setItem(K_AD,y); }catch(e){} }
   return y||'?';
+}
+/* Görünürlük kontrolü — toast göstermez, sadece true/false döner.
+   Yönetici VEYA bir personele atanmış cihaz = notları görebilir/ekleyebilir. */
+function notYetkisi(){
+  if(yonetici) return true;
+  if(cihazAtandiMi()) return true;
+  if(!personel.length) return true;   // personel listesi hiç tanımlı değilse eski davranış (herkese açık)
+  return false;
 }
 function onayYetkisi(){
   if(cihazAtandiMi()) return true;
@@ -1324,6 +1332,7 @@ function notListe(t){
 }
 function notSayi(t){ return (Array.isArray(t.notlar2)?t.notlar2:(t.notlar&&String(t.notlar).trim()?[1]:[])).length; }
 async function notEkle(id){
+  if(!notYetkisi()){ toast('Bu cihazın not yetkisi yok'); return; }
   const t=tanklar.find(x=>x.id===id); if(!t) return;
   const r=await notDialog(t.kod+' — Yeni Not','');
   if(r===null || (!r.metin && !r.fotoId)) return;
@@ -1331,6 +1340,7 @@ async function notEkle(id){
   await tankYaz(); kapat(); detay(id); toast('Not eklendi');
 }
 async function notDuzenleFn(id, nid){
+  if(!notYetkisi()){ toast('Bu cihazın not yetkisi yok'); return; }
   const t=tanklar.find(x=>x.id===id); if(!t) return;
   const n=notListe(t).find(x=>x.id===nid); if(!n) return;
   const eskiFoto=n.foto;
@@ -1343,6 +1353,7 @@ async function notDuzenleFn(id, nid){
   if(r.fotoDegisti && eskiFoto && eskiFoto!==r.fotoId) fotoSil(eskiFoto);
 }
 async function notSilFn(id, nid){
+  if(!notYetkisi()){ toast('Bu cihazın not yetkisi yok'); return; }
   const t=tanklar.find(x=>x.id===id); if(!t) return;
   const liste=notListe(t);
   const n=liste.find(x=>x.id===nid); if(!n) return;
@@ -1766,7 +1777,7 @@ function cizOzet(){
   const kapBekleyen=kapanisBekleyenler();
   const yanlisBos=yanlisBosaltilanlar();
   e.innerHTML=`
-    ${!yonetici?'':(()=>{
+    ${!notYetkisi()?'':(()=>{
       const notlu=tanklar.filter(t=>notSayi(t)>0)
         .sort((a,b)=>{
           const sa=(notListe(a)[0]||{}).t||'', sb=(notListe(b)[0]||{}).t||'';
@@ -2006,7 +2017,7 @@ function cizTanklar(){
   document.getElementById('hdr').innerHTML=`
     <div class="top"><h1>🧪 Tanklar</h1><button class="icon" id="btnOkut">Okut</button>${yonetici?'<button class="icon" id="btnQR">QR</button><button class="icon" id="btnHizli">Hızlı Ekle</button><button class="icon" id="btnExcel">📊 Excel</button><button class="icon" id="btnAnaliz">🧪 Analiz</button>'+(veriYuklendi?'':'<button class="icon" id="btnVeri">Veri Yükle</button>')+'<button class="icon" id="btnYedek">Yedek</button>':''}<button class="icon" id="btnKilit">${yonetici?'🔓':'🔒'}</button></div>
     <input id="ara" placeholder="Tank ara: A-14, biber…" value="${arama}" autocomplete="off">
-    <div class="chips">${[['hepsi','Aktif'],...(yonetici?[['notlu','📝 Notlu']]:[]),['acik','🔓 Açık'],['erken','⬇ Erken'],['hazir','Hazır'],['bugun','📅 Bugün Kapanacak'],['yakin','Yaklaşan'],['gecti','Geçen'],['dip','🧽 Temizlenecek'],['temiz','✓ Temiz']]
+    <div class="chips">${[['hepsi','Aktif'],...(notYetkisi()?[['notlu','📝 Notlu']]:[]),['acik','🔓 Açık'],['erken','⬇ Erken'],['hazir','Hazır'],['bugun','📅 Bugün Kapanacak'],['yakin','Yaklaşan'],['gecti','Geçen'],['dip','🧽 Temizlenecek'],['temiz','✓ Temiz']]
       .map(([k,ad])=>`<button class="chip" data-f="${k}" aria-pressed="${filtre===k}">${ad}<b>${say[k]||0}</b></button>`).join('')}`;
   document.getElementById('btnKilit').onclick=yoneticiGirisi;
   document.getElementById('btnOkut').onclick=qrOku;
@@ -2063,7 +2074,7 @@ function tankListesiCiz(){
           ${acikMi(t)?`<span class="pill acikPill">🔓 AÇIK${kalanKg(t)!=null?' · '+kalanKg(t)+' kg':''}</span>`:''}
           ${(numuneGerekliMi(t)&&!numuneAlinmisMi(t))?`<span class="pill numBekPill">🧪 Numune Bekliyor</span>`:''}
           ${numuneAlinmisMi(t)?`<span class="pill numAlPill">🧪 Numune ${numuneSayi(t)>1?'x'+numuneSayi(t)+' · ':''}${kisaTarih(numuneListe(t)[0].tarih)}</span>`:''}
-          ${(yonetici&&notSayi(t))?`<span class="pill notPill">📝 ${notSayi(t)}</span>`:''}
+          ${(notYetkisi()&&notSayi(t))?`<span class="pill notPill">📝 ${notSayi(t)}</span>`:''}
         </div>
         ${son?`<div class="olcumGrid">
           <div><span>pH</span><b class="${phKritik?'uyari':''}">${son.ph||'—'}</b></div>
@@ -3563,7 +3574,7 @@ function detay(id){
       <b>${tz.toplamKg} kg</b>
       <small>${tz.adet} kez tuz verildi</small>
     </div>` : ''; })()}
-    ${yonetici?`<div class="sec">Notlar${notListe(t).length?` <small style="font-weight:400;color:var(--muted)">(${notListe(t).length})</small>`:''}</div>
+    ${notYetkisi()?`<div class="sec">Notlar${notListe(t).length?` <small style="font-weight:400;color:var(--muted)">(${notListe(t).length})</small>`:''}</div>
     ${notListe(t).length
       ? notListe(t).map(n=>`<div class="notKart">
           <div class="notMetin">${(n.m||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/\n/g,'<br>')}</div>
@@ -4853,7 +4864,7 @@ function cizTankIsEmri(kod){
         <div class="meta">
           <span class="pill ${SINIF[d]}">${ETIKET[d]}</span>
           <span class="pill">${g}/${t.hedefGun} gün</span>
-          ${(yonetici&&notSayi(t))?`<span class="pill notPill">📝 ${notSayi(t)}</span>`:''}
+          ${(notYetkisi()&&notSayi(t))?`<span class="pill notPill">📝 ${notSayi(t)}</span>`:''}
           <span class="pill">Dolum ${kisaTarih(t.baslangic)}</span>
           ${t.devSure?`<span class="pill soon">Devirdaim özel: ${t.devSure} sa</span>`:''}
         </div>
@@ -4917,7 +4928,7 @@ function cizTankIsEmri(kod){
         <span class="v">pH ${o.ph||'—'} <em>·</em> Tuz ${o.tuz||'—'}${o.tuz?'%':''}${o.asit?` <em>·</em> Asit ${o.asit}%`:''} <em>·</em> ${o.sicaklik||'—'}${o.sicaklik?'°':''}
         ${o.not?`<span class="n">${o.not}</span>`:''}</span></div>`).join('')}
     </div>`:''}
-    ${yonetici?`<div class="grup">
+    ${notYetkisi()?`<div class="grup">
       <h3>Notlar<small>${notListe(t).length||'yok'}</small></h3>
       ${notListe(t).length? notListe(t).slice(0,5).map(n=>`<div class="notKart">
           <div class="notMetin">${(n.m||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/\n/g,'<br>')}</div>
@@ -4981,6 +4992,7 @@ function cizTankIsEmri(kod){
       await tankYaz(); cizTankIsEmri(kod); return;
     }
     if(ev.target.closest('#qrNotEkle')){
+      if(!notYetkisi()){ toast('Bu cihazın not yetkisi yok'); return; }
       const r=await notDialog(t.kod+' — Yeni Not','');
       if(r===null||(!r.metin&&!r.fotoId)) return;
       notListe(t).unshift({id:'n'+Date.now(), m:r.metin, foto:r.fotoId||null, k:kullaniciAdi()||'—', t:bugunISO(), s:saatSimdi()});
@@ -4990,6 +5002,7 @@ function cizTankIsEmri(kod){
     if(nf){ fotoGoster(nf.dataset.notfoto); return; }
     const qnd=ev.target.closest('[data-qnotduz]');
     if(qnd){
+      if(!notYetkisi()){ toast('Bu cihazın not yetkisi yok'); return; }
       const n=notListe(t).find(x=>x.id===qnd.dataset.qnotduz); if(!n) return;
       const eskiFoto=n.foto;
       const r=await notDialog(t.kod+' — Notu Düzenle', n.m, n.foto);
@@ -5003,6 +5016,7 @@ function cizTankIsEmri(kod){
     }
     const qns=ev.target.closest('[data-qnotsil]');
     if(qns){
+      if(!notYetkisi()){ toast('Bu cihazın not yetkisi yok'); return; }
       const nid=qns.dataset.qnotsil;
       const n=notListe(t).find(x=>x.id===nid); if(!n) return;
       const ok=await onayDialog('Notu Sil','"'+n.m.slice(0,80)+(n.m.length>80?'…':'')+'"\n\nBu not silinecek.','Sil');
