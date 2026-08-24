@@ -128,11 +128,15 @@ main{padding:8px 16px 0}
 .anTekrarBtn{margin:0;padding:6px 12px;font-size:12px;width:auto;flex-shrink:0}
 .pill.numBekPill{background:#EDE9FE;color:#5B21B6;border-color:#DDD6FE;font-weight:700}
 .pill.numAlPill{background:#F5F3FF;color:#6D28D9;border-color:#DDD6FE}
-.tuzToplamKart{background:#F0FDF4;border:1px solid #86EFAC;border-radius:12px;padding:11px 14px;margin-bottom:12px;
-  display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:4px 10px}
-.tuzToplamKart span{font-size:12.5px;color:#166534;flex-basis:100%}
-.tuzToplamKart b{font-family:var(--cond);font-size:22px;color:#15803D;letter-spacing:.02em}
-.tuzToplamKart small{font-size:11px;color:#166534}
+.tuzToplamKart{background:#F0FDF4;border:1px solid #86EFAC;border-radius:12px;padding:11px 14px;margin-bottom:12px}
+.tuzToplamKart>span:first-child{font-size:12.5px;color:#166534;font-weight:600;display:block;margin-bottom:6px}
+.tuzSatir{display:flex;align-items:center;justify-content:space-between;padding:4px 0;font-size:12.5px;color:#166534;
+  border-top:1px dashed #BBF7D0}
+.tuzSatir:first-of-type{border-top:none}
+.tuzSatir b{font-family:var(--cond);font-size:14px;color:#15803D;font-weight:600}
+.tuzSatir.tuzSatirToplam{border-top:1.5px solid #86EFAC;margin-top:4px;padding-top:8px}
+.tuzSatir.tuzSatirToplam span{font-weight:700;color:#166534}
+.tuzSatir.tuzSatirToplam b{font-size:18px}
 .numKart{background:#F5F3FF;border:1px solid #C4B5FD;border-radius:12px;padding:10px 12px;margin-bottom:9px}
 .gArsivRozet{background:#EDE9FE;color:#5B21B6;border-radius:7px;padding:3px 8px;font-size:11px;font-weight:600}
 .gArsivSatir{margin-top:5px;padding-top:5px;border-top:1px dashed #DDD6FE;font-size:12px;color:#6D28D9;line-height:1.45}
@@ -537,7 +541,7 @@ function revYaz(){
     fbIstek('/'+encodeURIComponent(K_REV)+'.json',{method:'PUT', body:JSON.stringify(v)}).catch(()=>{});
   }catch(e){}
 }
-const SURUM='22.08.2026 06:17';
+const SURUM='24.08.2026 05:12';
 let urunHedef={};
 const K_PERSONEL='tanktakip:personel', K_AD_KILIT='tanktakip:cihazKilit';
 /* v3 anahtarları: eski sürümlü cihazlar (eski önbellekli bilgisayar/telefon)
@@ -1511,9 +1515,22 @@ function numuneListe(t){
 }
 function numuneSayi(t){ return Array.isArray(t.numune2)? t.numune2.length : (t.numune?1:0); }
 function numuneAlinmisMi(t){ return numuneSayi(t)>0; }
-/* Numune bekleyen tanklar: eşiği geçmiş, HİÇ numune alınmamış */
+/* "Numune tamam" = en az bir kez alınmış VE son sonuç normal aralıkta.
+   Son sonuç hâlâ sınır dışıysa (ya da hiç değer girilmemişse) tank tekrar
+   numune bekleyen listesine düşer — sonuç normale gelene kadar sürer. */
+function numuneTamamlandiMi(t){
+  if(!numuneAlinmisMi(t)) return false;
+  const son=sonNumune(t);
+  if(!son) return false;
+  if(numuneSapmaVar(son)) return false;          // sınır dışı -> tekrar gerekli
+  const degerYok = !son.ph && !son.tuz && !son.asit;
+  if(degerYok) return false;                     // değer hiç girilmemiş -> henüz sonuçlanmamış say
+  return true;
+}
+/* Numune bekleyen tanklar: eşiği geçmiş VE (hiç alınmamış YA DA son sonucu
+   hâlâ sınır dışı/değersiz) tanklar. */
 function numuneBekleyenler(){
-  return tanklar.filter(t=>numuneGerekliMi(t) && !numuneAlinmisMi(t))
+  return tanklar.filter(t=>numuneGerekliMi(t) && !numuneTamamlandiMi(t))
     .sort((a,b)=>gun(b)-gun(a));   // en çok bekleyen önce
 }
 async function numuneEkle(id, deger){
@@ -2072,8 +2089,9 @@ function tankListesiCiz(){
           <span class="pill ${SINIF[d]}">${ETIKET[d]}</span>
           <span class="pill">${g}/${t.hedefGun} gün</span>
           ${acikMi(t)?`<span class="pill acikPill">🔓 AÇIK${kalanKg(t)!=null?' · '+kalanKg(t)+' kg':''}</span>`:''}
+          ${(numuneGerekliMi(t)&&!numuneTamamlandiMi(t)&&numuneAlinmisMi(t))?`<span class="pill numBekPill">🧪 Sonuç Sınır Dışı · Tekrar Gerekli</span>`:''}
           ${(numuneGerekliMi(t)&&!numuneAlinmisMi(t))?`<span class="pill numBekPill">🧪 Numune Bekliyor</span>`:''}
-          ${numuneAlinmisMi(t)?`<span class="pill numAlPill">🧪 Numune ${numuneSayi(t)>1?'x'+numuneSayi(t)+' · ':''}${kisaTarih(numuneListe(t)[0].tarih)}</span>`:''}
+          ${numuneTamamlandiMi(t)?`<span class="pill numAlPill">🧪 Numune ${numuneSayi(t)>1?'x'+numuneSayi(t)+' · ':''}${kisaTarih(numuneListe(t)[0].tarih)}</span>`:''}
           ${(notYetkisi()&&notSayi(t))?`<span class="pill notPill">📝 ${notSayi(t)}</span>`:''}
         </div>
         ${son?`<div class="olcumGrid">
@@ -2832,7 +2850,7 @@ function cizProgram(){
   (yonetici?`<button class="btn ghost" id="gunEkle">+ Gün ekle</button>`:'')+
   `<div class="sec pg-urun">Hedef Gün — ${progUrun}<small style="float:right;font-size:12px">seriye göre</small></div>
   <div class="grafKutu">
-    ${(()=>{const a=hedefAyar(progUrun);const akt=tanklar.filter(t=>!t.bosaltildi&&t.urun===progUrun);
+    ${(()=>{const a=hedefAyar(progUrun);const akt=tanklar.filter(t=>!t.bosaltildi&&programUrun(t.urun)===progUrun);
       const seriSay={};akt.forEach(t=>{const s=seri(t);seriSay[s]=(seriSay[s]||0)+1;});
       return `<p class="hint" style="margin:0 0 8px">${akt.length} aktif tank${Object.keys(seriSay).length?' · '+Object.entries(seriSay).map(([s,n])=>s+':'+n).join(' '):''}</p>
       <div class="tuzgrid">
@@ -3284,7 +3302,9 @@ function cizProgram(){
       const gen=+document.getElementById('uhGenel').value; if(gen>0) ayar.genel=gen;
       if(!Object.keys(ayar).length){ toast('En az bir değer gir'); return; }
       const mevcutDa=document.getElementById('uhMevcut').checked;
-      const etkilenen=mevcutDa? tanklar.filter(t=>!t.bosaltildi&&t.urun===progUrun&&!t.erkenBitiren) : [];
+      /* progUrun'e bağlı ürünler de (Kavanozluk No.2 gibi) aynı hedef gün ayarını
+         kullanmalı — birebir isim değil, programUrun() ile çözülmüş kök karşılaştırılır. */
+      const etkilenen=mevcutDa? tanklar.filter(t=>!t.bosaltildi&&programUrun(t.urun)===progUrun&&!t.erkenBitiren) : [];
       const ozet=['A','B','C','D','E'].filter(s=>ayar[s]).map(s=>s+': '+ayar[s]+'g').join(' · ')+(ayar.genel?(Object.keys(ayar).length>1?' · ':'')+'Genel: '+ayar.genel+'g':'');
       const ok=await onayDialog(progUrun+' — Hedef Gün',
         ozet+'\n\n'+(mevcutDa? 'Mevcut '+etkilenen.length+' aktif tanka da uygulanacak (erken hazır işaretliler korunur).' : 'Sadece bundan sonraki dolumlarda geçerli olacak; mevcut tanklar değişmeyecek.'),
@@ -3540,17 +3560,20 @@ function tankBakimGecmisi(t, adet){
 function tankToplamTuz(t){
   const up=program[programUrun(t.urun)]||{};
   const s=seri(t);
-  let toplam=0, adet=0;
+  let toplam=0;
+  const kayitlar=[];
   Object.entries(isemri).forEach(([tarih,gunKayit])=>{
-    if(!gunKayit[t.id+':T']) return;
-    adet++;
+    const kayit=gunKayit[t.id+':T'];
+    if(!kayit) return;
     /* onaylandığı tarihteki fermantasyon gününü bul, o günün tuz değerini al */
     const g=gunFark(t.baslangic,tarih)+1;
     const pr=up[g];
     const kg=(pr && pr.tuz && pr.tuz[s]) || 0;
     toplam+=(+kg)||0;
+    kayitlar.push({gun:g, tarih, kg:(+kg)||0, kisi:(kayit&&kayit.k)||''});
   });
-  return {toplamKg:toplam, adet};
+  kayitlar.sort((a,b)=>a.gun-b.gun);
+  return {toplamKg:toplam, adet:kayitlar.length, kayitlar};
 }
 function detay(id){
   const t=tanklar.find(x=>x.id===id); if(!t) return;
@@ -3569,11 +3592,13 @@ function detay(id){
       <div><span>${kalan>=0?'Kalan':'Aşım'}</span><b style="font-size:16px;line-height:1.3;padding-top:4px;display:block">${kalanMetin(t)}</b></div>
       <div><span>Dolum</span><b>${kisaTarih(t.baslangic)}</b></div>
     </div>
-    ${(()=>{ const tz=tankToplamTuz(t); return tz.adet? `<div class="tuzToplamKart">
-      <span>🧂 Bu partide toplam atılan tuz</span>
-      <b>${tz.toplamKg} kg</b>
-      <small>${tz.adet} kez tuz verildi</small>
-    </div>` : ''; })()}
+    ${(()=>{ const tz=tankToplamTuz(t); if(!tz.adet) return '';
+      return `<div class="tuzToplamKart">
+        <span>🧂 Bu partide tuz dökümü</span>
+        ${tz.kayitlar.map(k=>`<div class="tuzSatir"><span>${k.gun}. gün · ${kisaTarih(k.tarih)}${k.kisi?' · '+k.kisi:''}</span><b>${k.kg} kg</b></div>`).join('')}
+        <div class="tuzSatir tuzSatirToplam"><span>Toplam (${tz.adet} kez)</span><b>${tz.toplamKg} kg</b></div>
+      </div>`;
+    })()}
     ${notYetkisi()?`<div class="sec">Notlar${notListe(t).length?` <small style="font-weight:400;color:var(--muted)">(${notListe(t).length})</small>`:''}</div>
     ${notListe(t).length
       ? notListe(t).map(n=>`<div class="notKart">
