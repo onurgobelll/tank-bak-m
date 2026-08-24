@@ -541,7 +541,7 @@ function revYaz(){
     fbIstek('/'+encodeURIComponent(K_REV)+'.json',{method:'PUT', body:JSON.stringify(v)}).catch(()=>{});
   }catch(e){}
 }
-const SURUM='24.08.2026 05:12';
+const SURUM='24.08.2026 06:27';
 let urunHedef={};
 const K_PERSONEL='tanktakip:personel', K_AD_KILIT='tanktakip:cihazKilit';
 /* v3 anahtarları: eski sürümlü cihazlar (eski önbellekli bilgisayar/telefon)
@@ -3565,12 +3565,16 @@ function tankToplamTuz(t){
   Object.entries(isemri).forEach(([tarih,gunKayit])=>{
     const kayit=gunKayit[t.id+':T'];
     if(!kayit) return;
-    /* onaylandığı tarihteki fermantasyon gününü bul, o günün tuz değerini al */
+    /* onaylandığı tarihteki fermantasyon gününü bul, o günün tuz değerini al.
+       Kg değeri 0/boşsa o gün gerçekte tuz verilmemiş demektir — dökümde ve
+       "kaç kez" sayısında yer almamalı (yalnız gösterge amaçlı olsa bile). */
     const g=gunFark(t.baslangic,tarih)+1;
     const pr=up[g];
-    const kg=(pr && pr.tuz && pr.tuz[s]) || 0;
-    toplam+=(+kg)||0;
-    kayitlar.push({gun:g, tarih, kg:(+kg)||0, kisi:(kayit&&kayit.k)||''});
+    const kgHam=(pr && pr.tuz && pr.tuz[s]);
+    const kg=(+kgHam)||0;
+    if(!kg) return;   // 0 kg -> gerçek tuz verme değil, sayma
+    toplam+=kg;
+    kayitlar.push({gun:g, tarih, kg, kisi:(kayit&&kayit.k)||''});
   });
   kayitlar.sort((a,b)=>a.gun-b.gun);
   return {toplamKg:toplam, adet:kayitlar.length, kayitlar};
