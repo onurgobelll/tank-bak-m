@@ -541,7 +541,7 @@ function revYaz(){
     fbIstek('/'+encodeURIComponent(K_REV)+'.json',{method:'PUT', body:JSON.stringify(v)}).catch(()=>{});
   }catch(e){}
 }
-const SURUM='24.08.2026 06:27';
+const SURUM='26.08.2026 14:04';
 let urunHedef={};
 const K_PERSONEL='tanktakip:personel', K_AD_KILIT='tanktakip:cihazKilit';
 /* v3 anahtarları: eski sürümlü cihazlar (eski önbellekli bilgisayar/telefon)
@@ -1584,8 +1584,12 @@ function atlananGorevler(gorevKodu, urunFiltre){
       const tarih=gunTarihi(t,g);
       if(!tarih) return;
       if((isemri[tarih]||{})[t.id+':'+gercekKod]) return;   // zaten onaylı
-      out.push({t, gun:g, tarih, kod:gercekKod,
-        tuzKg: gercekKod==='T' ? (pr.tuz && pr.tuz[s]) || null : null});
+      /* Tuz görevi için kg 0/tanımsızsa o gün gerçekte tuz verilmesi
+         gerekmiyor demektir — "atlanmış" sayılmamalı (tank detayındaki
+         tuz dökümüyle aynı kural). */
+      const tuzKg = gercekKod==='T' ? (+(pr.tuz && pr.tuz[s]))||0 : null;
+      if(gercekKod==='T' && !tuzKg) return;
+      out.push({t, gun:g, tarih, kod:gercekKod, tuzKg});
     });
   });
   return out.sort((a,b)=> (gun(b.t)-b.gun) - (gun(a.t)-a.gun) || a.t.kod.localeCompare(b.t.kod,'tr',{numeric:true}));
@@ -2116,8 +2120,10 @@ document.getElementById('fab').onclick=()=>form();
 function cizIsEmri(){
   if(!ieTarih) ieTarih=bugunISO();
   const hepsiListe=isEmriUret(ieTarih);
-  /* geçmişte yapılmamış işler — chip ve filtre kararları buna da baksın */
-  const gecikTumu=(ieTarih===bugunISO())?gecikenIsler(ieTarih,7):[];
+  /* Geçmişte yapılmamış işler — hangi tarihe bakılıyorsa ONUN geçmişine göre
+     hesaplanır (sadece bugünkü ekranda değil). Böylece "dün ne kaçırdım"
+     diye dünün tarihini açtığında da geciken işler görünür. */
+  const gecikTumu=gecikenIsler(ieTarih,7);
   const urunSay={};
   hepsiListe.forEach(x=>{ const u=x.t.urun||'—'; urunSay[u]=(urunSay[u]||0)+1; });
   const urunAdlari=Object.keys(urunSay).sort();
