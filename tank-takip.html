@@ -541,7 +541,7 @@ function revYaz(){
     fbIstek('/'+encodeURIComponent(K_REV)+'.json',{method:'PUT', body:JSON.stringify(v)}).catch(()=>{});
   }catch(e){}
 }
-const SURUM='26.08.2026 14:04';
+const SURUM='29.08.2026 07:10';
 let urunHedef={};
 const K_PERSONEL='tanktakip:personel', K_AD_KILIT='tanktakip:cihazKilit';
 /* v3 anahtarları: eski sürümlü cihazlar (eski önbellekli bilgisayar/telefon)
@@ -2076,7 +2076,13 @@ function tankListesiCiz(){
   const sira={gecti:0,bugunKapanacak:1,hazir:2,yakin:3,devam:4,dip:5,temiz:6};
   liste.sort((a,b)=>(acikMi(b)?1:0)-(acikMi(a)?1:0)||(b.erkenBitiren?1:0)-(a.erkenBitiren?1:0)||sira[durum(a)]-sira[durum(b)]||a.kod.localeCompare(b.kod,'tr',{numeric:true}));
 
-  document.getElementById('ekran').innerHTML = liste.length ? liste.map(t=>{
+  const tt=temizKalmisTutarsizTanklar();
+  const uyariHTML = (tt.length&&yonetici) ? `<button class="gecUyari" id="temizTutarsizBtn" style="background:#FEF2F2;border-color:#FCA5A5">
+    <span class="gecIkon">⚠️</span>
+    <span class="gecMetin"><b style="color:#991B1B">${tt.length} tank "Temiz" görünüyor ama tarihi tutarsız</b>${tt.slice(0,5).map(t=>t.kod).join(', ')}${tt.length>5?'…':''} — muhtemelen yeniden dolduruldu, işaret kalmış. Dokun ve düzelt</span>
+    <span class="gecOk" style="color:#DC2626">›</span>
+  </button>` : '';
+  document.getElementById('ekran').innerHTML = uyariHTML + (liste.length ? liste.map(t=>{
     const g=gun(t),d=durum(t);
     const yuzde=Math.max(6,Math.min(100,Math.round(g/ +t.hedefGun*100)));
     const gcls=d==='gecti'?'g-late':(d==='yakin'||d==='bugunKapanacak')?'g-warn':(d==='hazir'?'g-ok':'');
@@ -2109,7 +2115,22 @@ function tankListesiCiz(){
         <span class="dTarih">${kisaTarih(t.baslangic)}</span>
       </div>
     </button>`;
-  }).join('') : `<div class="empty"><b>Kayıt yok</b>${q?'Arama sonucu boş.':'+ Tank ile dolum kaydı aç.'}</div>`;
+  }).join('') : `<div class="empty"><b>Kayıt yok</b>${q?'Arama sonucu boş.':'+ Tank ile dolum kaydı aç.'}</div>`);
+  const ttb=document.getElementById('temizTutarsizBtn');
+  if(ttb) ttb.onclick=async()=>{
+    const tt=temizKalmisTutarsizTanklar();
+    if(!tt.length) return;
+    const ok=await onayDialog('Tutarsız Tankları Düzelt',
+      tt.length+' tank "boşaltıldı/temizlendi" işaretli görünüyor ama tarihi geçersiz:\n\n'+
+      tt.slice(0,10).map(t=>t.kod+' ('+(t.urun||'')+')').join('\n')+
+      (tt.length>10?`\n… ve ${tt.length-10} tank daha`:'')+
+      '\n\nBu işaretler kaldırılacak. Ancak dolum tarihi de hatalı olabilir '+
+      '(negatif/tutarsız gün gösteriyorsa) — düzelttikten sonra tank detayından '+
+      'dolum tarihini ayrıca kontrol et.\n\nDevam edilsin mi?','Düzelt');
+    if(!ok) return;
+    await temizKalmisTutarsizDuzelt(tt);
+    tankListesiCiz(); toast(tt.length+' tank düzeltildi — dolum tarihlerini de kontrol et');
+  };
   document.getElementById('ekran').onclick=e=>{
     const c=e.target.closest('.card'); if(c) detay(c.dataset.id);
   };
@@ -2221,11 +2242,17 @@ function cizIsEmri(){
   if(!liste.length){
     /* Boş ekranda da onarım uyarısı görünmeli — asıl sorunu burada fark ediliyor */
     const kkBos=kapaliKalmisTanklar();
+    const huBos=hedefUyusmayanTanklar();
     e.innerHTML=
       ((kkBos.length&&yonetici)?`<button class="gecUyari" id="kapaliUyariBtn" style="background:#FFF7ED;border-color:#FDBA74">
         <span class="gecIkon">🔧</span>
         <span class="gecMetin"><b style="color:#9A3412">${kkBos.length} tank yanlışlıkla "kapalı" görünüyor</b>${kkBos.slice(0,5).map(t=>t.kod).join(', ')}${kkBos.length>5?'…':''} — yeniden dolduruldu ama iş emri çıkmıyor. Dokun ve düzelt</span>
         <span class="gecOk" style="color:#D97706">›</span>
+      </button>`:'')
+      + ((huBos.length&&yonetici)?`<button class="gecUyari" id="hedefUyariBtn" style="background:#EFF6FF;border-color:#93C5FD">
+        <span class="gecIkon">📏</span>
+        <span class="gecMetin"><b style="color:#1D4ED8">${huBos.length} tankın hedef günü program ile uyuşmuyor</b>${huBos.slice(0,5).map(x=>x.t.kod).join(', ')}${huBos.length>5?'…':''} — program sonradan değişti. Dokun ve düzelt</span>
+        <span class="gecOk" style="color:#2563EB">›</span>
       </button>`:'')
       + `<div class="empty"><b>Bu tarihte iş yok</b>${tanklar.some(t=>!t.bosaltildi)?'Programda bu güne görev tanımlı değil.':'Önce Tanklar sekmesinden dolum kaydı aç.'}</div>`;
     const kub=document.getElementById('kapaliUyariBtn');
@@ -2240,6 +2267,19 @@ function cizIsEmri(){
       if(!ok) return;
       await kapaliKalmisDuzelt(kk);
       cizIsEmri(); toast(kk.length+' tank tekrar programa alındı');
+    };
+    const hub=document.getElementById('hedefUyariBtn');
+    if(hub) hub.onclick=async()=>{
+      const hu=hedefUyusmayanTanklar();
+      if(!hu.length) return;
+      const ok=await onayDialog('Hedef Gün Uyuşmazlıklarını Düzelt',
+        hu.length+' tankın hedef günü, programdaki güncel değerle uyuşmuyor:\n\n'+
+        hu.slice(0,10).map(x=>x.t.kod+': '+x.t.hedefGun+' → '+x.guncelHedef+' gün').join('\n')+
+        (hu.length>10?`\n… ve ${hu.length-10} tank daha`:'')+
+        '\n\nProgramdaki güncel değere göre düzeltilsin mi?','Düzelt');
+      if(!ok) return;
+      await hedefUyusmayanDuzelt(hu);
+      cizIsEmri(); toast(hu.length+' tankın hedef günü güncellendi');
     };
     return;
   }
@@ -2271,6 +2311,12 @@ function cizIsEmri(){
         <span class="gecIkon">🔧</span>
         <span class="gecMetin"><b style="color:#9A3412">${kk.length} tank yanlışlıkla "kapalı" görünüyor</b>${kk.slice(0,5).map(t=>t.kod).join(', ')}${kk.length>5?'…':''} — yeniden dolduruldu ama iş emri çıkmıyor. Dokun ve düzelt</span>
         <span class="gecOk" style="color:#D97706">›</span>
+      </button>`:''; })()}
+    ${(()=>{ const hu=hedefUyusmayanTanklar(); return (hu.length&&yonetici)?`
+      <button class="gecUyari" id="hedefUyariBtn" style="background:#EFF6FF;border-color:#93C5FD">
+        <span class="gecIkon">📏</span>
+        <span class="gecMetin"><b style="color:#1D4ED8">${hu.length} tankın hedef günü program ile uyuşmuyor</b>${hu.slice(0,5).map(x=>x.t.kod).join(', ')}${hu.length>5?'…':''} — program sonradan değişti. Dokun ve düzelt</span>
+        <span class="gecOk" style="color:#2563EB">›</span>
       </button>`:''; })()}
     ${(ieGorev!=='GEC' && gecikTumu.length)?`
       <button class="gecUyari" id="gecUyariBtn">
@@ -2418,6 +2464,19 @@ function cizIsEmri(){
       if(!ok) return;
       await kapaliKalmisDuzelt(kk);
       cizIsEmri(); toast(kk.length+' tank tekrar programa alındı');
+      return;
+    }
+    if(ev.target.closest('#hedefUyariBtn')){
+      const hu=hedefUyusmayanTanklar();
+      if(!hu.length) return;
+      const ok=await onayDialog('Hedef Gün Uyuşmazlıklarını Düzelt',
+        hu.length+' tankın hedef günü, programdaki güncel değerle uyuşmuyor:\n\n'+
+        hu.slice(0,10).map(x=>x.t.kod+': '+x.t.hedefGun+' → '+x.guncelHedef+' gün').join('\n')+
+        (hu.length>10?`\n… ve ${hu.length-10} tank daha`:'')+
+        '\n\nProgramdaki güncel değere göre düzeltilsin mi?','Düzelt');
+      if(!ok) return;
+      await hedefUyusmayanDuzelt(hu);
+      cizIsEmri(); toast(hu.length+' tankın hedef günü güncellendi');
       return;
     }
     if(ev.target.closest('#gecUyariBtn')){
@@ -2618,6 +2677,38 @@ function numuneNormal(){
    Tuz < Asit ise değerler kutuları karışmış demektir. */
 /* Yeniden doldurulmuş ama eski partiden "kapatıldı" bayrağı üstünde kalmış tanklar.
    Belirti: tank dolu (boşaltılmamış) ve kapatma tarihi dolum tarihinden ÖNCE. */
+/* Programdaki hedef gün (ya da seri bazlı ayar) değişti ama tankın kendi
+   hedefGun'u güncellenmedi — "Mevcutlara da uygula" işaretlenmeden kaydedilmiş
+   ya da tank o güncellemeden sonra eklenmiş/yeniden doldurulmuş olabilir. */
+function hedefUyusmayanTanklar(){
+  return tanklar.filter(t=>{
+    if(t.bosaltildi || t.erkenBitiren) return false;
+    const hg=hedefGunHesapla(t.urun, seri(t));
+    return hg && (+t.hedefGun)!==hg;
+  }).map(t=>({t, guncelHedef:hedefGunHesapla(t.urun,seri(t))}));
+}
+async function hedefUyusmayanDuzelt(liste){
+  liste.forEach(({t,guncelHedef})=>{ t.hedefGun=guncelHedef; t.hedefDusuk=''; });
+  await tankYaz();
+}
+/* Boşaltılmış+temizlenmiş görünen ama aslında yeniden doldurulmuş olması
+   muhtemel tanklar. Belirti: negatif ya da anlamsız gün sayısı — yani
+   baslangic tarihi ileri bir tarihe kaymış, veya boşaltıldı/temizlendi
+   işaretleri kalmış olabilir. */
+function temizKalmisTutarsizTanklar(){
+  return tanklar.filter(t=>{
+    if(!t.bosaltildi || !t.temizlendi) return false;
+    const g=gunTarihte(t, bugunISO());
+    return g<1;   // bugüne göre henüz başlamamış / negatif gün -> tarih tutarsız
+  });
+}
+async function temizKalmisTutarsizDuzelt(liste){
+  liste.forEach(t=>{
+    t.bosaltildi=''; t.bosaltan=''; t.bosaltmaSaat='';
+    t.temizlendi=''; t.temizleyen=''; t.temizlikSaat='';
+  });
+  await tankYaz();
+}
 function kapaliKalmisTanklar(){
   return tanklar.filter(t=>{
     if(t.bosaltildi || !t.kapatildi || !t.baslangic) return false;
