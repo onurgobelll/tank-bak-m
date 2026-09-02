@@ -541,7 +541,7 @@ function revYaz(){
     fbIstek('/'+encodeURIComponent(K_REV)+'.json',{method:'PUT', body:JSON.stringify(v)}).catch(()=>{});
   }catch(e){}
 }
-const SURUM='29.08.2026 07:10';
+const SURUM='02.09.2026 18:18';
 let urunHedef={};
 const K_PERSONEL='tanktakip:personel', K_AD_KILIT='tanktakip:cihazKilit';
 /* v3 anahtarları: eski sürümlü cihazlar (eski önbellekli bilgisayar/telefon)
@@ -1409,7 +1409,9 @@ function secimDialog(baslik, detay, secenekler){
   });
 }
 /* aynı koda sahip DOLU (boşaltılmamış) tank */
-function aktifTankBul(kod){ return tanklar.find(t=>t.kod===kod && !t.bosaltildi); }
+function aktifTankBul(kod){ const kn=kodNormal(kod); return tanklar.find(t=>kodNormal(t.kod)===kn && !t.bosaltildi); }
+/* Aynı tanka ait BOŞ (bosaltildi dolu) kaydı bul — kod yazım farkını (D-24/D-024) tolere eder. */
+function bosTankBul(kod){ const kn=kodNormal(kod); return tanklar.find(t=>kodNormal(t.kod)===kn && t.bosaltildi); }
 function tankOzetMetni(t){
   const g=gun(t);
   return t.kod+' → '+(t.urun||'ürün yok')+', '+g+'. gün'+(t.kapasite?', '+t.kapasite:'');
@@ -2077,11 +2079,18 @@ function tankListesiCiz(){
   liste.sort((a,b)=>(acikMi(b)?1:0)-(acikMi(a)?1:0)||(b.erkenBitiren?1:0)-(a.erkenBitiren?1:0)||sira[durum(a)]-sira[durum(b)]||a.kod.localeCompare(b.kod,'tr',{numeric:true}));
 
   const tt=temizKalmisTutarsizTanklar();
-  const uyariHTML = (tt.length&&yonetici) ? `<button class="gecUyari" id="temizTutarsizBtn" style="background:#FEF2F2;border-color:#FCA5A5">
+  const mk=mukerrerTankKodlari();
+  const uyariHTML =
+    ((mk.length&&yonetici) ? `<button class="gecUyari" id="mukerrerBtn" style="background:#FEF2F2;border-color:#FCA5A5">
+    <span class="gecIkon">🔀</span>
+    <span class="gecMetin"><b style="color:#991B1B">${mk.length} tank kodu MÜKERRER görünüyor</b>${mk.slice(0,5).map(x=>x.kodNorm).join(', ')}${mk.length>5?'…':''} — aynı tank iki ayrı kayıt olmuş (yazım farkı: D-24 / D-024). Dokun ve birleştir</span>
+    <span class="gecOk" style="color:#DC2626">›</span>
+  </button>` : '')
+    + ((tt.length&&yonetici) ? `<button class="gecUyari" id="temizTutarsizBtn" style="background:#FEF2F2;border-color:#FCA5A5">
     <span class="gecIkon">⚠️</span>
     <span class="gecMetin"><b style="color:#991B1B">${tt.length} tank "Temiz" görünüyor ama tarihi tutarsız</b>${tt.slice(0,5).map(t=>t.kod).join(', ')}${tt.length>5?'…':''} — muhtemelen yeniden dolduruldu, işaret kalmış. Dokun ve düzelt</span>
     <span class="gecOk" style="color:#DC2626">›</span>
-  </button>` : '';
+  </button>` : '');
   document.getElementById('ekran').innerHTML = uyariHTML + (liste.length ? liste.map(t=>{
     const g=gun(t),d=durum(t);
     const yuzde=Math.max(6,Math.min(100,Math.round(g/ +t.hedefGun*100)));
@@ -2116,6 +2125,24 @@ function tankListesiCiz(){
       </div>
     </button>`;
   }).join('') : `<div class="empty"><b>Kayıt yok</b>${q?'Arama sonucu boş.':'+ Tank ile dolum kaydı aç.'}</div>`);
+  const mkb=document.getElementById('mukerrerBtn');
+  if(mkb) mkb.onclick=async()=>{
+    const mk=mukerrerTankKodlari();
+    if(!mk.length) return;
+    const ozet=mk.map(x=>{
+      const isimler=x.liste.map(t=>(t.urun||'—')+(t.bosaltildi?' (boş)':' (dolu, '+gun(t)+'. gün)')).join(' + ');
+      return '• '+x.kodNorm+': '+isimler;
+    }).join('\n');
+    const ok=await onayDialog('Mükerrer Tankları Birleştir',
+      mk.length+' tank kodunda birden fazla kayıt var (muhtemelen "D-24" ve "D-024" gibi yazım farkından):\n\n'+
+      ozet.slice(0,600)+
+      '\n\nDolu olan kayıt esas alınır, boş/eski kayıt geçmiş olarak onun içine eklenip silinir. '+
+      'Hiçbir veri kaybolmaz. Devam edilsin mi?','Birleştir');
+    if(!ok) return;
+    let n=0;
+    for(const x of mk){ if(await mukerrerTankBirlestir(x.kodNorm)) n++; }
+    tankListesiCiz(); toast(n+' tank kodu birleştirildi');
+  };
   const ttb=document.getElementById('temizTutarsizBtn');
   if(ttb) ttb.onclick=async()=>{
     const tt=temizKalmisTutarsizTanklar();
@@ -2187,7 +2214,7 @@ function cizIsEmri(){
   });
 
   document.getElementById('hdr').innerHTML=`
-    <div class="top"><h1>İş Emri</h1><button class="icon" id="btnOkut">Okut</button><button class="icon" id="btnRapor">Rapor</button><button class="icon" id="btnPay">Paylaş</button><button class="icon" id="btnKilit">${yonetici?'🔓':'🔒'}</button></div>
+    <div class="top"><h1>İş Emri</h1><button class="icon" id="btnOkut">Okut</button><button class="icon" id="btnRapor">Rapor</button><button class="icon" id="btnAralik">📋 Bakım Listesi</button><button class="icon" id="btnPay">Paylaş</button><button class="icon" id="btnKilit">${yonetici?'🔓':'🔒'}</button></div>
     <div class="iebar">
       <button class="icon" id="dG">‹</button>
       <input type="date" id="ieT" value="${ieTarih}">
@@ -2235,6 +2262,7 @@ function cizIsEmri(){
   document.getElementById('dI').onclick=()=>{const d=new Date(ieTarih+'T00:00');d.setDate(d.getDate()+1);ieTarih=d.toISOString().slice(0,10);cizIsEmri();};
   document.getElementById('btnPay').onclick=()=>paylas(liste);
   document.getElementById('btnRapor').onclick=()=>gunSonuRaporu(liste,done);
+  document.getElementById('btnAralik').onclick=tarihAraligiRaporu;
   document.getElementById('btnOkut').onclick=qrOku;
   document.getElementById('btnKilit').onclick=yoneticiGirisi;
 
@@ -2556,6 +2584,84 @@ function paylas(liste){
   else if(navigator.clipboard){ navigator.clipboard.writeText(m).then(()=>toast('Panoya kopyalandı')); }
 }
 
+/* TARİH ARALIĞI RAPORU: belirtilen aralıktaki her günün programlı görevlerini
+   toplar, onaylanmış/onaylanmamış diye ayırır. Tank bazında gruplu döner. */
+function tarihAraligiTara(basTarih, bitTarih, gorevFiltre, urunFiltre){
+  const yapilan=[], yapilmayan=[];
+  const gorulen=new Set();   // aynı tank+görev+gün ikinci kez sayılmasın
+  let d=new Date(basTarih+'T00:00');
+  const bit=new Date(bitTarih+'T00:00');
+  while(d<=bit){
+    const tarih=d.toISOString().slice(0,10);
+    isEmriUret(tarih).forEach(x=>{
+      if(urunFiltre && urunFiltre!=='hepsi' && (x.t.urun||'—')!==urunFiltre) return;
+      x.gorevler.forEach(k=>{
+        if(gorevFiltre && gorevFiltre!=='hepsi' && k!==gorevFiltre) return;
+        const anahtar=x.t.id+':'+k+':'+tarih;
+        if(gorulen.has(anahtar)) return;
+        gorulen.add(anahtar);
+        const onay=(isemri[tarih]||{})[x.t.id+':'+k];
+        const kayit={t:x.t, kod:k, gun:x.g, tarih, tuzKg:x.tuzKg, onay};
+        (onay? yapilan : yapilmayan).push(kayit);
+      });
+    });
+    d.setDate(d.getDate()+1);
+  }
+  yapilmayan.sort((a,b)=>a.tarih.localeCompare(b.tarih)||a.t.kod.localeCompare(b.t.kod,'tr',{numeric:true}));
+  yapilan.sort((a,b)=>a.tarih.localeCompare(b.tarih)||a.t.kod.localeCompare(b.t.kod,'tr',{numeric:true}));
+  return {yapilan, yapilmayan};
+}
+function tarihAraligiRaporu(){
+  const bugun=bugunISO();
+  const yediGunOnce=(()=>{ const d=new Date(); d.setDate(d.getDate()-6); return d.toISOString().slice(0,10); })();
+  const p=panel(`
+    <div class="pbar"><h2>Bakım Kontrol Listesi</h2><button class="icon" data-kapat>Kapat</button></div>
+    <p class="hint" style="margin:0 0 10px">Bir tarih aralığındaki tüm bakım işlerini yapılan/yapılmayan diye tek listede çıkarır.</p>
+    <div class="two">
+      <div><label>Başlangıç</label><input type="date" id="ta_bas" value="${yediGunOnce}"></div>
+      <div><label>Bitiş</label><input type="date" id="ta_bit" value="${bugun}"></div>
+    </div>
+    <div class="two" style="margin-top:8px">
+      <div><label>Görev</label>
+        <select id="ta_gorev">
+          <option value="hepsi">Tümü</option>
+          ${Object.entries(GOREV_PROG).map(([k,ad])=>`<option value="${k}">${ad}</option>`).join('')}
+        </select></div>
+      <div><label>Ürün</label>
+        <select id="ta_urun"><option value="hepsi">Tümü</option>${urunler().map(u=>`<option>${u}</option>`).join('')}</select></div>
+    </div>
+    <button class="btn ghost" id="ta_getir" style="margin-top:10px">Listeyi Getir</button>
+    <div id="ta_sonuc"></div>
+  `);
+  const q=s=>p.querySelector(s);
+  q('#ta_getir').onclick=()=>{
+    const bas=q('#ta_bas').value, bit=q('#ta_bit').value;
+    if(!bas||!bit||bas>bit){ toast('Tarih aralığını kontrol et'); return; }
+    const gf=q('#ta_gorev').value, uf=q('#ta_urun').value;
+    const {yapilan,yapilmayan}=tarihAraligiTara(bas,bit,gf,uf);
+    const toplam=yapilan.length+yapilmayan.length;
+    const tuzToplam=[...yapilan,...yapilmayan].filter(x=>x.kod==='T').reduce((n,x)=>n+(x.tuzKg||0),0);
+    const satir=x=>`<div class="log"><span class="d">${x.t.kod}</span><span class="v">${GOREV[x.kod]||x.kod}${x.kod==='T'&&x.tuzKg?' · '+x.tuzKg+' kg':''} · ${x.gun}. gün
+        <span class="n">${kisaTarih(x.tarih)}${x.onay&&x.onay.k?' · '+x.onay.k+(x.onay.s?' '+x.onay.s:''):''}</span></span></div>`;
+    q('#ta_sonuc').innerHTML=
+      `<p class="hint" style="margin-top:10px"><b>${toplam} görev</b> · ${yapilan.length} yapıldı · <b style="color:${yapilmayan.length?'var(--alarm)':'inherit'}">${yapilmayan.length} yapılmadı</b>${tuzToplam?' · toplam '+tuzToplam+' kg tuz':''}</p>`
+      + (yapilmayan.length? `<div class="sec" style="color:var(--alarm)">Yapılmayan (${yapilmayan.length})</div>`+yapilmayan.slice(0,80).map(satir).join('')
+          +(yapilmayan.length>80?`<p class="hint">… ve ${yapilmayan.length-80} kayıt daha</p>`:'') : '<p class="hint" style="color:var(--yesil)">✓ Bu aralıkta yapılmayan iş yok.</p>')
+      + (yapilan.length? `<div class="sec">Yapılan (${yapilan.length})</div>`+yapilan.slice(0,80).map(satir).join('')
+          +(yapilan.length>80?`<p class="hint">… ve ${yapilan.length-80} kayıt daha</p>`:'') : '')
+      + `<button class="btn ghost" id="ta_paylas" style="margin-top:10px">📋 Paylaş</button>`;
+    q('#ta_paylas').onclick=()=>{
+      const basAd=new Date(bas+'T00:00').toLocaleDateString('tr-TR',{day:'numeric',month:'long'});
+      const bitAd=new Date(bit+'T00:00').toLocaleDateString('tr-TR',{day:'numeric',month:'long'});
+      let m=`BAKIM KONTROL LİSTESİ · ${basAd} — ${bitAd}\n`;
+      m+=`Tamamlanan: ${yapilan.length} / ${toplam}${tuzToplam?' · '+tuzToplam+' kg tuz':''}\n`;
+      if(yapilmayan.length){ m+=`\nYAPILMAYAN:\n`; yapilmayan.forEach(x=>{ m+=`  ${x.t.kod} — ${GOREV[x.kod]||x.kod}${x.kod==='T'&&x.tuzKg?' ('+x.tuzKg+' kg)':''} · ${kisaTarih(x.tarih)}\n`; }); }
+      if(yapilan.length){ m+=`\nYAPILAN:\n`; yapilan.forEach(x=>{ m+=`  ${x.t.kod} — ${GOREV[x.kod]||x.kod} ✓ ${x.onay.k||''} ${kisaTarih(x.tarih)}\n`; }); }
+      if(navigator.share){ navigator.share({text:m}).catch(()=>{}); }
+      else if(navigator.clipboard){ navigator.clipboard.writeText(m).then(()=>toast('Rapor panoya kopyalandı')); }
+    };
+  };
+}
 function gunSonuRaporu(liste,done){
   if(!liste.length){ toast('Bu tarihte iş yok'); return; }
   const tar=new Date(ieTarih+'T00:00').toLocaleDateString('tr-TR',{day:'numeric',month:'long'});
@@ -2695,6 +2801,43 @@ async function hedefUyusmayanDuzelt(liste){
    muhtemel tanklar. Belirti: negatif ya da anlamsız gün sayısı — yani
    baslangic tarihi ileri bir tarihe kaymış, veya boşaltıldı/temizlendi
    işaretleri kalmış olabilir. */
+/* Aynı fiziksel tanka ait, kod yazımı farklı olduğu için (D-24 vs D-024)
+   sistemde İKİ AYRI KAYIT oluşmuş olabilir — biri eski (boş/temiz), biri
+   yeni (dolu). Bunları grupla; birden fazla kaydı olan kodları bildir. */
+function mukerrerTankKodlari(){
+  const grup={};
+  tanklar.forEach(t=>{
+    const kn=kodNormal(t.kod||'');
+    (grup[kn]=grup[kn]||[]).push(t);
+  });
+  return Object.entries(grup)
+    .filter(([,liste])=>liste.length>1)
+    .map(([kn,liste])=>({kodNorm:kn, liste}));
+}
+/* Mükerrer grup içinde AKTİF (dolu) olanı esas alıp, boş/temiz olan eski
+   kaydı arşiv olarak esas kayda ekleyip siler. Aktif yoksa en yeni dolumu
+   olan kalır. */
+async function mukerrerTankBirlestir(kodNorm){
+  const liste=tanklar.filter(t=>kodNormal(t.kod||'')===kodNorm);
+  if(liste.length<2) return false;
+  let esas = liste.find(t=>!t.bosaltildi) || liste.slice().sort((a,b)=>String(b.baslangic||'').localeCompare(String(a.baslangic||'')))[0];
+  const digerleri = liste.filter(t=>t!==esas);
+  digerleri.forEach(eski=>{
+    (esas.gecmis=esas.gecmis||[]).push({
+      urun:eski.urun, baslangic:eski.baslangic, bitis:eski.bosaltildi||'',
+      kapasite:eski.kapasite, kapatildi:eski.kapatildi||'', bosaltan:eski.bosaltan||'',
+      olcumArsiv:(eski.olcumler&&eski.olcumler.length)?eski.olcumler:undefined,
+      numuneArsiv:(eski.numune2&&eski.numune2.length)?eski.numune2:undefined,
+      notArsiv:(eski.notlar2&&eski.notlar2.length)?eski.notlar2:undefined,
+      kimyasalArsiv:(eski.kimyasallar&&eski.kimyasallar.length)?eski.kimyasallar:undefined,
+      _birlestirmeNotu:'mükerrer kayıt birleştirildi'
+    });
+    tanklar=tanklar.filter(t=>t!==eski);
+    silinenler.add(eski.id); setKaydet(K_SILINEN,silinenler);
+  });
+  await tankYaz();
+  return true;
+}
 function temizKalmisTutarsizTanklar(){
   return tanklar.filter(t=>{
     if(!t.bosaltildi || !t.temizlendi) return false;
@@ -4134,7 +4277,7 @@ function hizliOnizleGoster(p, satirlarMetin){
     let dolum=0, bosalt=0, olcum=0, devirdaim=0, bulunamadi=0, atlanan=0, guncellendi=0;
     const bugun=bugunISO();
     gecerli.forEach(x=>{
-      const t=tanklar.find(tk=>tk.kod===x.kod&&!tk.bosaltildi);
+      const t=aktifTankBul(x.kod);
       if(x.eylem==='dolum'){
         const veri={kod:x.kod, urun:x.urun, kapasite:x.miktar?(x.miktar+' kg'):'',
           baslangic:bugun, hedefGun:hedefGunHesapla(x.urun,(x.kod.match(/^[A-ZÇĞİÖŞÜ]/)||[''])[0]), notlar:''};
@@ -4149,7 +4292,7 @@ function hizliOnizleGoster(p, satirlarMetin){
           }
           dolumYaz(t, veri, false); dolum++; return;
         }
-        const bosOlan = tanklar.find(tk=>tk.kod===x.kod&&tk.bosaltildi);
+        const bosOlan = bosTankBul(x.kod);
         if(bosOlan){ dolumYaz(bosOlan, veri, false); }
         else{ tanklar.push({id:'t'+Date.now()+'_'+Math.random().toString(36).slice(2,7),...veri,bosaltildi:'',olcumler:[],kimyasallar:[]}); }
         dolum++;
@@ -4870,7 +5013,8 @@ function qrOlustur(){
       // gercek tank kayitlarini "basildi" isaretle
       const bug=bugunISO(); let n=0;
       liste.forEach(x=>{
-        const t=tanklar.find(tk=>tk.kod===x.kod);
+        const kn=kodNormal(x.kod);
+        const t=tanklar.find(tk=>kodNormal(tk.kod)===kn);
         if(t && !t.qrBasildi){ t.qrBasildi=bug; n++; }
       });
       if(n){ await tankYaz(); }
@@ -4879,7 +5023,7 @@ function qrOlustur(){
       q('#qSonuc').insertAdjacentHTML('beforeend',
         '<button class="btn ghost" id="q_sifirla">Bu listeyi "basılmadı" yap</button>');
       q('#q_sifirla').onclick=async()=>{
-        liste.forEach(x=>{ const t=tanklar.find(tk=>tk.kod===x.kod); if(t) t.qrBasildi=''; });
+        liste.forEach(x=>{ const kn=kodNormal(x.kod); const t=tanklar.find(tk=>kodNormal(tk.kod)===kn); if(t) t.qrBasildi=''; });
         await tankYaz(); toast('Basılmadı olarak işaretlendi'); kapat(); qrOlustur();
       };
     }
@@ -4942,7 +5086,8 @@ function cizTankIsEmri(kod){
   qrGoruntuKod=kod;
   document.querySelector('nav').style.display='none';
   document.getElementById('fab').style.display='none';
-  const t=tanklar.find(x=>x.kod===kod && !x.bosaltildi) || tanklar.find(x=>x.kod===kod);
+  const kn=kodNormal(kod);
+  const t=tanklar.find(x=>kodNormal(x.kod)===kn && !x.bosaltildi) || tanklar.find(x=>kodNormal(x.kod)===kn);
   document.getElementById('hdr').innerHTML=`
     <div class="top"><button class="icon" id="qrGeri">‹ Geri</button><h1 style="flex:1;text-align:center">${kod}</h1><button class="icon" id="qrAna">Ana Sayfa</button></div>`;
   const gb=document.getElementById('qrGeri'); if(gb) gb.onclick=qrCik;
