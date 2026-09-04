@@ -541,7 +541,7 @@ function revYaz(){
     fbIstek('/'+encodeURIComponent(K_REV)+'.json',{method:'PUT', body:JSON.stringify(v)}).catch(()=>{});
   }catch(e){}
 }
-const SURUM='04.09.2026 10:42';
+const SURUM='04.09.2026 11:04';
 let urunHedef={};
 const K_PERSONEL='tanktakip:personel', K_AD_KILIT='tanktakip:cihazKilit';
 /* v3 anahtarları: eski sürümlü cihazlar (eski önbellekli bilgisayar/telefon)
@@ -2825,16 +2825,18 @@ async function hedefUyusmayanDuzelt(liste){
    hiç boşalmadan yapılan bir "elle ürün düzeltmesi"nin yanlışlıkla arşive
    düşmesinden kaynaklanır (eski kural bunu yeni parti sayıyordu). Fiziksel
    bir dolum değildir; toplu bulunup temizlenebilir. */
+/* DEVRE DIŞI — bu tarama artık kullanılmıyor.
+   "Aynı gün başlayıp biten + boşaltan boş" deseni, elle ürün düzeltmesi
+   KADAR, Hızlı Ekle/Excel ile aynı gün içinde art arda yapılan GERÇEK
+   dolumları da yakalıyordu (o yolla dolum yapıldığında bosaltan hiç set
+   edilmiyor). Otomatik toplu silme bu ayrımı güvenle yapamadığı için
+   kapatıldı — kaynaktaki hata zaten ayrıca düzeltildi (elle düzenleme artık
+   sadece ürün adı değiştiğinde arşive hiç yazmıyor, sadece gerçek tarih
+   değişikliğinde yazıyor). Bundan sonra oluşan hiçbir geçmiş kayıt yanlış
+   olamaz; şüpheli görünen eski kayıtlar varsa tek tek "Bu kaydı sil" ile
+   elle kontrol edilip silinmeli. */
 function ayniGunGecmisKayitlari(){
-  const out=[];
-  tanklar.forEach(t=>{
-    (t.gecmis||[]).forEach((g,gi)=>{
-      if(g.baslangic && g.bitis && g.baslangic===g.bitis){
-        out.push({t, gi, g});
-      }
-    });
-  });
-  return out;
+  return [];
 }
 async function ayniGunGecmisTemizle(liste){
   /* Aynı tanktan birden fazla index varsa büyükten küçüğe silmek gerekir,
