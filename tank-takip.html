@@ -541,7 +541,7 @@ function revYaz(){
     fbIstek('/'+encodeURIComponent(K_REV)+'.json',{method:'PUT', body:JSON.stringify(v)}).catch(()=>{});
   }catch(e){}
 }
-const SURUM='02.09.2026 18:18';
+const SURUM='04.09.2026 04:47';
 let urunHedef={};
 const K_PERSONEL='tanktakip:personel', K_AD_KILIT='tanktakip:cihazKilit';
 /* v3 anahtarları: eski sürümlü cihazlar (eski önbellekli bilgisayar/telefon)
@@ -3905,11 +3905,10 @@ function detay(id){
     ${!t.bosaltildi?`<button class="btn ghost" id="numTekBtn">🧪 Yeni Numune Ekle</button>`:''}
     `:''}
     ${(Array.isArray(t.gecmis)&&t.gecmis.length)?`
-    <details style="margin-top:10px">
-      <summary style="cursor:pointer;color:var(--muted);font-size:12.5px">Geçmiş Partiler (${t.gecmis.length})</summary>
-      ${t.gecmis.map((g,gi)=>`
-        <div class="numKart" style="opacity:.9;margin-top:8px">
-          <b>${g.urun||'—'}</b>
+    <div class="sec">Geçmiş Partiler<small style="font-weight:400;color:var(--muted)"> (${t.gecmis.length})</small></div>
+    ${t.gecmis.map((g,gi)=>`
+        <button type="button" class="numKart gecmisPartiBtn" data-gecmis="${gi}" style="opacity:.9;margin-top:8px;width:100%;text-align:left;border:1px solid #C4B5FD;cursor:pointer">
+          <b>${g.urun||'—'} <span style="float:right;font-size:11px;color:#6D28D9" data-gecmisOk="${gi}">Detay ▾</span></b>
           <span>${kisaTarih(g.baslangic)} → ${kisaTarih(g.bitis)}${g.kapasite?' · '+g.kapasite:''}${g.bosaltan?' · boşaltan: '+g.bosaltan:''}</span>
           <div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:6px">
             ${(g.numuneArsiv&&g.numuneArsiv.length)?`<span class="gArsivRozet">🧪 ${g.numuneArsiv.length} numune</span>`:''}
@@ -3918,9 +3917,8 @@ function detay(id){
             ${(g.kimyasalArsiv&&g.kimyasalArsiv.length)?`<span class="gArsivRozet">⚗ ${g.kimyasalArsiv.length} kimyasal</span>`:''}
             ${g.tuzToplamKg?`<span class="gArsivRozet">🧂 ${g.tuzToplamKg} kg tuz (${g.tuzAdet}x)</span>`:''}
           </div>
-          ${((g.numuneArsiv&&g.numuneArsiv.length)||(g.olcumArsiv&&g.olcumArsiv.length)||(g.notArsiv&&g.notArsiv.length&&yonetici))?`
-          <details style="margin-top:7px">
-            <summary style="cursor:pointer;font-size:12px;color:#6D28D9">Ayrıntı</summary>
+          <div class="gecmisDetay" data-gecmisIcerik="${gi}" style="display:none;margin-top:7px">
+            ${((g.numuneArsiv&&g.numuneArsiv.length)||(g.olcumArsiv&&g.olcumArsiv.length)||(g.notArsiv&&g.notArsiv.length&&yonetici))?`
             ${(g.numuneArsiv||[]).map(m=>`
               <div class="gArsivSatir">🧪 ${kisaTarih(m.tarih)}${m.gun?' · '+m.gun+'. gün':''} —
                 ${m.ph?'pH '+m.ph+' · ':''}${m.tuz?'Tuz '+m.tuz+'% · ':''}${m.asit?'Asit '+m.asit+'%':''}${m.kisi?' · '+m.kisi:''}
@@ -3932,9 +3930,9 @@ function detay(id){
             ${yonetici?(g.notArsiv||[]).map(n=>`
               <div class="gArsivSatir">📝 ${(n.m||'').replace(/&/g,'&amp;').replace(/</g,'&lt;')}
                 <div style="font-size:10.5px;color:#B45309">${n.k||'—'}${n.t?' · '+kisaTarih(n.t):''}</div></div>`).join(''):''}
-          </details>`:''}
-        </div>`).join('')}
-    </details>
+            `:'<div class="gArsivSatir">Bu partide numune, ölçüm veya not kaydı yok.</div>'}
+          </div>
+        </button>`).join('')}
     `:''}
     ${!t.bosaltildi?(acikMi(t)
       ? `<div class="acikKart"><b>🔓 AÇIK TANK</b>
@@ -3989,6 +3987,15 @@ function detay(id){
   p.querySelectorAll('[data-notfoto]').forEach(b=>b.onclick=(ev)=>{ ev.stopPropagation(); fotoGoster(b.dataset.notfoto); });
   p.querySelectorAll('[data-notsil]').forEach(b=>b.onclick=()=>notSilFn(id,b.dataset.notsil));
   /* --- kayıtlı personel: boşaltma ve temizlik --- */
+  p.querySelectorAll('.gecmisPartiBtn').forEach(b=>b.onclick=()=>{
+    const gi=b.dataset.gecmis;
+    const icerik=p.querySelector(`[data-gecmisIcerik="${gi}"]`);
+    const ok=p.querySelector(`[data-gecmisOk="${gi}"]`);
+    if(!icerik) return;
+    const acik = icerik.style.display!=='none';
+    icerik.style.display = acik?'none':'block';
+    if(ok) ok.textContent = acik?'Detay ▾':'Gizle ▴';
+  });
   const numT=q('#numTekBtn');
   if(numT) numT.onclick=async()=>{
     if(!onayYetkisi()) return;
