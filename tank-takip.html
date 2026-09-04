@@ -541,7 +541,7 @@ function revYaz(){
     fbIstek('/'+encodeURIComponent(K_REV)+'.json',{method:'PUT', body:JSON.stringify(v)}).catch(()=>{});
   }catch(e){}
 }
-const SURUM='04.09.2026 05:56';
+const SURUM='04.09.2026 10:42';
 let urunHedef={};
 const K_PERSONEL='tanktakip:personel', K_AD_KILIT='tanktakip:cihazKilit';
 /* v3 anahtarları: eski sürümlü cihazlar (eski önbellekli bilgisayar/telefon)
@@ -2080,6 +2080,7 @@ function tankListesiCiz(){
 
   const tt=temizKalmisTutarsizTanklar();
   const mk=mukerrerTankKodlari();
+  const agk=ayniGunGecmisKayitlari();
   const uyariHTML =
     ((mk.length&&yonetici) ? `<button class="gecUyari" id="mukerrerBtn" style="background:#FEF2F2;border-color:#FCA5A5">
     <span class="gecIkon">🔀</span>
@@ -2090,6 +2091,11 @@ function tankListesiCiz(){
     <span class="gecIkon">⚠️</span>
     <span class="gecMetin"><b style="color:#991B1B">${tt.length} tank "Temiz" görünüyor ama tarihi tutarsız</b>${tt.slice(0,5).map(t=>t.kod).join(', ')}${tt.length>5?'…':''} — muhtemelen yeniden dolduruldu, işaret kalmış. Dokun ve düzelt</span>
     <span class="gecOk" style="color:#DC2626">›</span>
+  </button>` : '')
+    + ((agk.length&&yonetici) ? `<button class="gecUyari" id="ayniGunBtn" style="background:#FFF7ED;border-color:#FDBA74">
+    <span class="gecIkon">🗓️</span>
+    <span class="gecMetin"><b style="color:#9A3412">${agk.length} yanlış geçmiş parti kaydı bulundu</b>Aynı gün başlayıp biten kayıtlar — tank boşalmadan yapılan ürün düzeltmesi yanlışlıkla arşivlenmiş. Dokun ve tümünü temizle</span>
+    <span class="gecOk" style="color:#D97706">›</span>
   </button>` : '');
   document.getElementById('ekran').innerHTML = uyariHTML + (liste.length ? liste.map(t=>{
     const g=gun(t),d=durum(t);
@@ -2142,6 +2148,20 @@ function tankListesiCiz(){
     let n=0;
     for(const x of mk){ if(await mukerrerTankBirlestir(x.kodNorm)) n++; }
     tankListesiCiz(); toast(n+' tank kodu birleştirildi');
+  };
+  const agb=document.getElementById('ayniGunBtn');
+  if(agb) agb.onclick=async()=>{
+    const agk=ayniGunGecmisKayitlari();
+    if(!agk.length) return;
+    const ozet=agk.slice(0,10).map(x=>'• '+x.t.kod+': '+(x.g.urun||'—')+' · '+kisaTarih(x.g.baslangic)).join('\n');
+    const ok=await onayDialog('Yanlış Geçmiş Kayıtlarını Temizle',
+      agk.length+' geçmiş parti kaydı aynı gün başlayıp aynı gün bitmiş görünüyor '+
+      '(tank boşalmadan yapılan ürün düzeltmesi yanlışlıkla arşivlenmiş):\n\n'+
+      ozet+(agk.length>10?`\n… ve ${agk.length-10} kayıt daha`:'')+
+      '\n\nBu kayıtlar silinsin mi? Tankların kendisine ya da aktif verilerine dokunulmaz.','Temizle');
+    if(!ok) return;
+    await ayniGunGecmisTemizle(agk);
+    tankListesiCiz(); toast(agk.length+' yanlış kayıt temizlendi');
   };
   const ttb=document.getElementById('temizTutarsizBtn');
   if(ttb) ttb.onclick=async()=>{
@@ -2801,6 +2821,32 @@ async function hedefUyusmayanDuzelt(liste){
    muhtemel tanklar. Belirti: negatif ya da anlamsız gün sayısı — yani
    baslangic tarihi ileri bir tarihe kaymış, veya boşaltıldı/temizlendi
    işaretleri kalmış olabilir. */
+/* Aynı gün başlayıp aynı gün biten geçmiş parti kayıtları — bunlar tank
+   hiç boşalmadan yapılan bir "elle ürün düzeltmesi"nin yanlışlıkla arşive
+   düşmesinden kaynaklanır (eski kural bunu yeni parti sayıyordu). Fiziksel
+   bir dolum değildir; toplu bulunup temizlenebilir. */
+function ayniGunGecmisKayitlari(){
+  const out=[];
+  tanklar.forEach(t=>{
+    (t.gecmis||[]).forEach((g,gi)=>{
+      if(g.baslangic && g.bitis && g.baslangic===g.bitis){
+        out.push({t, gi, g});
+      }
+    });
+  });
+  return out;
+}
+async function ayniGunGecmisTemizle(liste){
+  /* Aynı tanktan birden fazla index varsa büyükten küçüğe silmek gerekir,
+     yoksa index kayması olur. */
+  const grup={};
+  liste.forEach(x=>{ (grup[x.t.id]=grup[x.t.id]||[]).push(x.gi); });
+  Object.entries(grup).forEach(([tid,indexler])=>{
+    const t=tanklar.find(x=>x.id===tid); if(!t||!t.gecmis) return;
+    indexler.sort((a,b)=>b-a).forEach(i=>{ t.gecmis.splice(i,1); });
+  });
+  await tankYaz();
+}
 /* Aynı fiziksel tanka ait, kod yazımı farklı olduğu için (D-24 vs D-024)
    sistemde İKİ AYRI KAYIT oluşmuş olabilir — biri eski (boş/temiz), biri
    yeni (dolu). Bunları grupla; birden fazla kaydı olan kodları bildir. */
