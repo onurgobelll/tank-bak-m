@@ -541,7 +541,7 @@ function revYaz(){
     fbIstek('/'+encodeURIComponent(K_REV)+'.json',{method:'PUT', body:JSON.stringify(v)}).catch(()=>{});
   }catch(e){}
 }
-const SURUM='04.09.2026 04:47';
+const SURUM='04.09.2026 05:56';
 let urunHedef={};
 const K_PERSONEL='tanktakip:personel', K_AD_KILIT='tanktakip:cihazKilit';
 /* v3 anahtarları: eski sürümlü cihazlar (eski önbellekli bilgisayar/telefon)
@@ -3732,12 +3732,15 @@ function form(id){
       ['kod','urun','baslangic','hedefGun','kapasite'].forEach(a=>{
         if(veri[a]!==undefined) tankLog(t,a,t[a],veri[a],'Elle');
       });
-      /* Dolum tarihi ileri alındıysa ya da ürün değiştiyse bu YENİ PARTİ demektir:
-         önceki partiden kalan kapatma/boşaltma işaretleri temizlenmeli, yoksa
-         tank iş emrine girmez. */
-      const yeniParti = (veri.baslangic && veri.baslangic!==t.baslangic) || (veri.urun && veri.urun!==t.urun);
+      /* Dolum tarihi GERÇEKTEN ileri alındıysa (aynı gün değil, farklı bir
+         tarihe geçildiyse) bu yeni parti demektir. Ürün adı tek başına
+         değişmesi YENİ PARTİ SAYILMAZ — aynı gün içinde yanlış girilen
+         ürünün elle düzeltilmesi olabilir (tank fiziksel olarak boşalıp
+         dolmadı). Sadece tarih değiştiyse önceki partiden kalan işaretler
+         temizlenir; salt ürün düzeltmesinde dokunulmaz, arşive düşmez. */
+      const tarihGercektenDegisti = veri.baslangic && veri.baslangic!==t.baslangic;
       Object.assign(t,veri);
-      if(yeniParti){
+      if(tarihGercektenDegisti){
         t.kapatildi=''; t.kapatan=''; t.kapatmaSaat=''; t.kapanisKontrol=null;
         t.bosaltildi=''; t.bosaltan=''; t.bosaltmaSaat='';
         t.temizlendi=''; t.temizleyen=''; t.temizlikSaat='';
@@ -3907,7 +3910,7 @@ function detay(id){
     ${(Array.isArray(t.gecmis)&&t.gecmis.length)?`
     <div class="sec">Geçmiş Partiler<small style="font-weight:400;color:var(--muted)"> (${t.gecmis.length})</small></div>
     ${t.gecmis.map((g,gi)=>`
-        <button type="button" class="numKart gecmisPartiBtn" data-gecmis="${gi}" style="opacity:.9;margin-top:8px;width:100%;text-align:left;border:1px solid #C4B5FD;cursor:pointer">
+        <div class="numKart gecmisPartiBtn" data-gecmis="${gi}" style="opacity:.9;margin-top:8px;width:100%;text-align:left;border:1px solid #C4B5FD;cursor:pointer">
           <b>${g.urun||'—'} <span style="float:right;font-size:11px;color:#6D28D9" data-gecmisOk="${gi}">Detay ▾</span></b>
           <span>${kisaTarih(g.baslangic)} → ${kisaTarih(g.bitis)}${g.kapasite?' · '+g.kapasite:''}${g.bosaltan?' · boşaltan: '+g.bosaltan:''}</span>
           <div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:6px">
@@ -3931,8 +3934,9 @@ function detay(id){
               <div class="gArsivSatir">📝 ${(n.m||'').replace(/&/g,'&amp;').replace(/</g,'&lt;')}
                 <div style="font-size:10.5px;color:#B45309">${n.k||'—'}${n.t?' · '+kisaTarih(n.t):''}</div></div>`).join(''):''}
             `:'<div class="gArsivSatir">Bu partide numune, ölçüm veya not kaydı yok.</div>'}
+            ${yonetici?`<button type="button" class="btn ghost gecmisSilBtn" data-gecmissil="${gi}" style="margin-top:8px;font-size:12px;padding:8px;color:var(--alarm)">Bu kaydı sil (yanlışlıkla oluşmuşsa)</button>`:''}
           </div>
-        </button>`).join('')}
+        </div>`).join('')}
     `:''}
     ${!t.bosaltildi?(acikMi(t)
       ? `<div class="acikKart"><b>🔓 AÇIK TANK</b>
@@ -3987,7 +3991,8 @@ function detay(id){
   p.querySelectorAll('[data-notfoto]').forEach(b=>b.onclick=(ev)=>{ ev.stopPropagation(); fotoGoster(b.dataset.notfoto); });
   p.querySelectorAll('[data-notsil]').forEach(b=>b.onclick=()=>notSilFn(id,b.dataset.notsil));
   /* --- kayıtlı personel: boşaltma ve temizlik --- */
-  p.querySelectorAll('.gecmisPartiBtn').forEach(b=>b.onclick=()=>{
+  p.querySelectorAll('.gecmisPartiBtn').forEach(b=>b.onclick=(ev)=>{
+    if(ev.target.closest('.gecmisSilBtn')) return;   // silme düğmesi kendi işleyicisinde
     const gi=b.dataset.gecmis;
     const icerik=p.querySelector(`[data-gecmisIcerik="${gi}"]`);
     const ok=p.querySelector(`[data-gecmisOk="${gi}"]`);
@@ -3995,6 +4000,18 @@ function detay(id){
     const acik = icerik.style.display!=='none';
     icerik.style.display = acik?'none':'block';
     if(ok) ok.textContent = acik?'Detay ▾':'Gizle ▴';
+  });
+  p.querySelectorAll('.gecmisSilBtn').forEach(b=>b.onclick=async(ev)=>{
+    ev.stopPropagation();
+    const gi=+b.dataset.gecmissil;
+    const g=(t.gecmis||[])[gi]; if(!g) return;
+    const ok=await onayDialog('Geçmiş Kaydı Sil',
+      (g.urun||'—')+' · '+kisaTarih(g.baslangic)+' → '+kisaTarih(g.bitis)+'\n\n'+
+      'Bu kayıt yanlışlıkla oluşmuşsa (örn. tank boşalmadan elle ürün düzeltilmişse) silinebilir. '+
+      'İçindeki numune/ölçüm/not varsa onlar da kalıcı olarak silinir.','Sil');
+    if(!ok) return;
+    t.gecmis=(t.gecmis||[]).filter((_,i)=>i!==gi);
+    await tankYaz(); kapat(); detay(id); toast('Geçmiş kaydı silindi');
   });
   const numT=q('#numTekBtn');
   if(numT) numT.onclick=async()=>{
