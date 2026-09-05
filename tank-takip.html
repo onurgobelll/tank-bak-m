@@ -541,7 +541,7 @@ function revYaz(){
     fbIstek('/'+encodeURIComponent(K_REV)+'.json',{method:'PUT', body:JSON.stringify(v)}).catch(()=>{});
   }catch(e){}
 }
-const SURUM='04.09.2026 11:04';
+const SURUM='05.09.2026 06:46';
 let urunHedef={};
 const K_PERSONEL='tanktakip:personel', K_AD_KILIT='tanktakip:cihazKilit';
 /* v3 anahtarları: eski sürümlü cihazlar (eski önbellekli bilgisayar/telefon)
@@ -1309,6 +1309,18 @@ async function tankAc(id){
   t.acik={tarih:bugunISO(), kisi:kullaniciAdi()||'—', saat:saatSimdi(), kalan};
   await tankYaz(); kapat(); ciz();
   toast(t.kod+' açık işaretlendi'+(kalan?' · kalan '+kalan+' kg':''));
+}
+/* "Ürün Çektim (yarım kaldı)" yanlışlıkla işaretlenmişse geri alır —
+   tank açık olmadan önceki haline döner, hiçbir veri kaybolmaz. */
+async function acikGeriAlFn(id){
+  const t=tanklar.find(x=>x.id===id); if(!t||!t.acik) return;
+  if(!onayYetkisi()) return;
+  const ok=await onayDialog(t.kod+' — Açık İşaretini Geri Al',
+    'Bu tank "ürün çektim, yarım kaldı" olarak işaretlenmişti'+(t.acik.kalan!=null?' (kalan '+t.acik.kalan+' kg yazılmıştı)':'')+'.\n\n'+
+    'Yanlışlıkla mı işaretlendi? Geri alırsan tank normal (açık olmayan) haline döner.','Geri Al');
+  if(!ok) return;
+  t.acik=null;
+  await tankYaz(); kapat(); detay(id); toast(t.kod+' açık işareti geri alındı');
 }
 async function acikGuncelle(id){
   const t=tanklar.find(x=>x.id===id); if(!t||!t.acik) return;
@@ -3989,7 +4001,8 @@ function detay(id){
     ${!t.bosaltildi?(acikMi(t)
       ? `<div class="acikKart"><b>🔓 AÇIK TANK</b>
           <span>${kisaTarih(t.acik.tarih)} · ${t.acik.kisi||'—'}${t.acik.saat?' · '+t.acik.saat:''}${acikGun(t)?` · ${acikGun(t)} gündür açık`:''}${t.acik.kalan!=null?` · kalan <b>${t.acik.kalan} kg</b>`:''}</span></div>
-         <button class="btn ghost" id="acikGun">Kalan Miktarı Güncelle</button>`
+         <button class="btn ghost" id="acikGun">Kalan Miktarı Güncelle</button>
+         <button class="btn ghost" id="acikGeriAl" style="margin-top:8px;color:var(--alarm)">↩ Yanlışlıkla İşaretledim, Geri Al</button>`
       : `<button class="btn ghost" id="tankAcBtn">🔓 Ürün Çektim (yarım kaldı)</button>`):''}
     ${(!yonetici && !t.bosaltildi)?`<button class="btn" id="pBosalt">Tankı boşalt</button>`:''}
     ${(!yonetici && t.bosaltildi && !t.temizlendi)?`<button class="btn ghost" id="pTemiz">🧽 Temizlik Yapıldı</button>`:''}
@@ -4084,6 +4097,7 @@ function detay(id){
   });
   const tAc=q('#tankAcBtn'); if(tAc) tAc.onclick=()=>tankAc(id);
   const aG=q('#acikGun'); if(aG) aG.onclick=()=>acikGuncelle(id);
+  const agr=q('#acikGeriAl'); if(agr) agr.onclick=()=>acikGeriAlFn(id);
   const pB=q('#pBosalt');
   if(pB) pB.onclick=async()=>{
     if(!onayYetkisi()) return;
@@ -5300,7 +5314,8 @@ function cizTankIsEmri(kod){
     </div>
     ${acikMi(t)
       ? `<div class="acikKart"><b>🔓 AÇIK TANK</b><span>${kisaTarih(t.acik.tarih)}'den beri · ${t.acik.kisi||'—'}${t.acik.kalan!=null?` · kalan ${t.acik.kalan} kg`:''}</span></div>
-         <button class="btn ghost" id="qrAcikGun">Kalan Miktarı Güncelle</button>`
+         <button class="btn ghost" id="qrAcikGun">Kalan Miktarı Güncelle</button>
+         <button class="btn ghost" id="qrAcikGeriAl" style="margin-top:8px;color:var(--alarm)">↩ Yanlışlıkla İşaretledim, Geri Al</button>`
       : `<button class="btn ghost" id="qrTankAc">🔓 Ürün Çektim (yarım kaldı)</button>`}
     <button class="btn danger" id="qrBosalt">Tankı Boşalt</button>
     <p class="hint">Boşaltma kaydı adınla ve saatle kaydedilir.</p>
@@ -5309,6 +5324,8 @@ function cizTankIsEmri(kod){
   if(qta) qta.onclick=async()=>{ await tankAc(t.id); if(qrGoruntuKod) cizTankIsEmri(kod); };
   const qag=e.querySelector('#qrAcikGun');
   if(qag) qag.onclick=async()=>{ await acikGuncelle(t.id); if(qrGoruntuKod) cizTankIsEmri(kod); };
+  const qagr=e.querySelector('#qrAcikGeriAl');
+  if(qagr) qagr.onclick=async()=>{ await acikGeriAlFn(t.id); if(qrGoruntuKod) cizTankIsEmri(kod); };
   const bosaltBtn=e.querySelector('#qrBosalt');
   if(bosaltBtn) bosaltBtn.onclick=async()=>{
     if(!onayYetkisi()) return;
