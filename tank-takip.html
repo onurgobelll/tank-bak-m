@@ -134,6 +134,7 @@ main{padding:8px 16px 0}
 .anTekrarBtn{margin:0;padding:6px 12px;font-size:12px;width:auto;flex-shrink:0}
 .pill.numBekPill{background:#EDE9FE;color:#5B21B6;border-color:#DDD6FE;font-weight:700}
 .pill.numAlPill{background:#F5F3FF;color:#6D28D9;border-color:#DDD6FE}
+.pill.metaBekPill{background:#FFF7ED;color:#9A3412;border-color:#FED7AA;font-weight:700}
 .tuzToplamKart{background:#F0FDF4;border:1px solid #86EFAC;border-radius:12px;padding:11px 14px;margin-bottom:12px}
 .tuzToplamKart>span:first-child{font-size:12.5px;color:#166534;font-weight:600;display:block;margin-bottom:6px}
 .tuzSatir{display:flex;align-items:center;justify-content:space-between;padding:4px 0;font-size:12.5px;color:#166534;
@@ -508,6 +509,8 @@ async function fbIstek(yol, opt){
 const K_HEDEF='tanktakip:urunHedef';
 const K_NUMUNE_AYAR='tanktakip:numuneAyar';   // {urunler:[...], esik:N} — bulutta, tüm cihazlarda ortak
 let numuneAyar = {urunler:null, esik:null};   // null = henüz bulutdan gelmedi, varsayılan kullan
+const K_META_AYAR='tanktakip:metaAyar';        // {urunler:[...], esik:N, miktar:{A:kg,B:kg,...}} — bulutta, tüm cihazlarda ortak
+let metaAyar = {urunler:null, esik:null, miktar:null};
 const K_URUNES='tanktakip:urunEslesme';
 const K_YEDEK='tanktakip:yedekTank';
 const K_YEDEK_TARIH='tanktakip:yedekSonTarih';
@@ -557,7 +560,7 @@ function revYaz(){
     fbIstek('/'+encodeURIComponent(K_REV)+'.json',{method:'PUT', body:JSON.stringify(v)}).catch(()=>{});
   }catch(e){}
 }
-const SURUM='10.09.2026 12:00';
+const SURUM='23.09.2026 05:58';
 let urunHedef={};
 const K_PERSONEL='tanktakip:personel', K_AD_KILIT='tanktakip:cihazKilit';
 /* v3 anahtarları: eski sürümlü cihazlar (eski önbellekli bilgisayar/telefon)
@@ -712,10 +715,12 @@ async function kayipTanklar(){
    Sadece kullanıcının bilerek sildiği tanklar (silinenler) çıkarılır. */
 let tankKaynak='bulut';   /* 'bulut' | 'yerel' | 'bos' — başlangıçta veri nereden geldi */
 const K_SILINEN='tanktakip:silinenler';
+const K_SILINEN_NOT='tanktakip:silinenNotlar';   // bilinçli silinen not id'leri — birleştirme bunları geri getirmesin
 const K_GERIALINAN='tanktakip:onayGeriAlinan';
 function setYukle(k){ try{ return new Set(JSON.parse(localStorage.getItem(k)||'[]')); }catch(e){ return new Set(); } }
 function setKaydet(k,s){ try{ localStorage.setItem(k,JSON.stringify([...s].slice(-500))); }catch(e){} }
 let silinenler=setYukle(K_SILINEN);
+let silinenNotlar=setYukle(K_SILINEN_NOT);
 const ALAN_ADI={baslangic:'Dolum tarihi',urun:'Ürün',hedefGun:'Hedef gün',kapasite:'Miktar',kod:'Tank kodu'};
 /* Kritik alan değişikliklerini tankın kendi geçmişine yaz */
 function tankLog(t, alan, eski, yeni, kaynak){
@@ -748,7 +753,10 @@ function tankBirlestir(yerel, bulut){
   if(yParti > bParti) return {...yerel};
   if(bParti > yParti) return {...bulut};
   const t={...bulut, ...yerel};                    // düz alanlarda elimdeki kazanır
-  t.notlar2   = diziBirlestir(yerel.notlar2,   bulut.notlar2,   n=>n.id||n.m);
+  /* Bilinçli silinen notlar birleştirmede geri gelmesin — silinenNotlar
+     kalıcı olarak (localStorage) hangi not id'lerinin silindiğini tutar. */
+  t.notlar2   = diziBirlestir(yerel.notlar2, bulut.notlar2, n=>n.id||n.m)
+                  .filter(n=>!silinenNotlar.has(n.id));
   t.olcumler  = diziBirlestir(yerel.olcumler,  bulut.olcumler,  o=>(o.tarih||'')+'|'+(o.ph||'')+'|'+(o.tuz||'')+'|'+(o.saat||''));
   t.kimyasallar = diziBirlestir(yerel.kimyasallar, bulut.kimyasallar, x=>(x.tarih||'')+'|'+(x.ad||'')+'|'+(x.miktar||''));
   t.log       = diziBirlestir(yerel.log,       bulut.log,       l=>(l.t||'')+'|'+(l.s||'')+'|'+(l.a||'')+'|'+(l.y||''));
@@ -983,6 +991,8 @@ function canliSenkronBaslat(){
     if(ue!==undefined){ const ueC=eslesmeCoz(ue); if(JSON.stringify(ueC)!==JSON.stringify(urunEslesme)){ urunEslesme=ueC; degisti=true; } }
     const na=await fbGet(K_NUMUNE_AYAR);
     if(na && typeof na==='object' && JSON.stringify(na)!==JSON.stringify(numuneAyar)){ numuneAyar=na; degisti=true; }
+    const ma=await fbGet(K_META_AYAR);
+    if(ma && typeof ma==='object' && JSON.stringify(ma)!==JSON.stringify(metaAyar)){ metaAyar=ma; degisti=true; }
     if(t!==undefined){
       t.forEach(x=>{ if(x.kod){ const y=kodDuzelt(x.kod); if(y!==x.kod) x.kod=y; } });
       if(JSON.stringify(t)!==JSON.stringify(tanklar)){ tanklar=t; degisti=true; }
@@ -1404,6 +1414,7 @@ async function notSilFn(id, nid){
   const ok=await onayDialog('Notu Sil', '"'+(n.m||'(fotoğraf)').slice(0,80)+((n.m||'').length>80?'…':'')+'"\n\nBu not silinecek.','Sil');
   if(!ok) return;
   t.notlar2=liste.filter(x=>x.id!==nid);
+  silinenNotlar.add(nid); setKaydet(K_SILINEN_NOT,silinenNotlar);
   await tankYaz(); kapat(); detay(id); toast('Not silindi');
   if(n.foto) fotoSil(n.foto);
 }
@@ -1574,6 +1585,60 @@ function numuneTamamlandiMi(t){
 function numuneBekleyenler(){
   return tanklar.filter(t=>numuneGerekliMi(t) && !numuneTamamlandiMi(t))
     .sort((a,b)=>gun(b)-gun(a));   // en çok bekleyen önce
+}
+/* ---------- META KURALI: N günü geçen dolu tanklara seri bazlı miktar ----------
+   Aynı desende: eşik gün + kapsam ürünleri + (Numune'den farklı olarak) seri
+   bazlı sabit miktar tablosu. "Atıldı" durumu t.kimyasallar içinde ad==='Meta'
+   VE tarih tankın mevcut partisinin başlangıcından (t.baslangic) sonraysa
+   sayılır — böylece yeni parti eski partinin Meta kaydını miras almaz. */
+const META_ESIK_VARSAYILAN = 45;
+const META_URUN_VARSAYILAN = ['Salatalık No.1','Salatalık No.2','Salatalık No.3'];
+function metaEsigi(){ return metaAyar.esik!=null ? metaAyar.esik : META_ESIK_VARSAYILAN; }
+function metaUrunleri(){ return Array.isArray(metaAyar.urunler) ? metaAyar.urunler : META_URUN_VARSAYILAN.slice(); }
+function metaMiktarTablosu(){ return (metaAyar.miktar && typeof metaAyar.miktar==='object') ? metaAyar.miktar : {}; }
+function metaUrunKapsaminda(t){
+  const liste=metaUrunleri();
+  if(!liste.length) return true;
+  const kok = programUrun(t.urun) || t.urun;
+  return liste.includes(t.urun) || liste.includes(kok);
+}
+/* Bu tankın serisine göre atılacak Meta miktarı (kg). Tanımsızsa null döner
+   — tanımsız seriye otomatik atama YAPILMAZ, elle miktar sorulur. */
+function metaSeriMiktari(t){
+  const s=seri(t);
+  const tablo=metaMiktarTablosu();
+  const v=tablo[s];
+  return (v!=null && v!=='') ? v : null;
+}
+function metaGerekliMi(t){
+  if(t.bosaltildi) return false;
+  if(!metaUrunKapsaminda(t)) return false;
+  return gun(t) >= metaEsigi();
+}
+/* Bu partide (mevcut dolum tarihinden sonra) Meta zaten atılmış mı — parti
+   değişince (yeniden dolum) bu kayıt otomatik "yok" sayılır. */
+function metaAtildiMi(t){
+  return (t.kimyasallar||[]).some(k=>k.ad==='Meta' && String(k.tarih||'')>=String(t.baslangic||''));
+}
+function metaBekleyenler(){
+  return tanklar.filter(t=>metaGerekliMi(t) && !metaAtildiMi(t))
+    .sort((a,b)=>gun(b)-gun(a));
+}
+async function metaAyarKaydet(){ await fbSet(K_META_AYAR, metaAyar); }
+/* Toplu Meta atama: seri bazlı tanımlı miktarı olan tankları otomatik
+   işaretler; tanımsız seri varsa o tankları atlar (listede kalır, elle
+   girilmesi gerekir). */
+async function metaTopluUygula(liste){
+  const bugun=bugunISO(), saat=saatSimdi(), kisi=kullaniciAdi()||'—';
+  let uygulanan=0, atlanan=[];
+  liste.forEach(t=>{
+    const miktar=metaSeriMiktari(t);
+    if(miktar==null){ atlanan.push(t); return; }
+    (t.kimyasallar=t.kimyasallar||[]).unshift({ad:'Meta', miktar:miktar+' kg', tarih:bugun, k:kisi, s:saat});
+    uygulanan++;
+  });
+  if(uygulanan) await tankYaz();
+  return {uygulanan, atlanan};
 }
 async function numuneEkle(id, deger){
   const t=tanklar.find(x=>x.id===id); if(!t) return;
@@ -2216,7 +2281,7 @@ function cizKroki(){
   };
 }
 function cizTanklar(){
-  const say={hepsi:0,hazir:0,yakin:0,gecti:0,dip:0,temiz:0,erken:0,bugun:0,acik:0,notlu:0};
+  const say={hepsi:0,hazir:0,yakin:0,gecti:0,dip:0,temiz:0,erken:0,bugun:0,acik:0,notlu:0,metaBek:0};
   tanklar.forEach(t=>{
     if(t.bosaltildi){ if(t.temizlendi) say.temiz++; else say.dip++; return;}
     say.hepsi++; const d=durum(t); if(say[d]!==undefined) say[d]++;
@@ -2224,12 +2289,13 @@ function cizTanklar(){
     if(acikMi(t)) say.acik++;
     if(notSayi(t)) say.notlu++;
     if(d==='bugunKapanacak') say.bugun++;
+    if(metaGerekliMi(t) && !metaAtildiMi(t)) say.metaBek++;
   });
   const kgToplam=toplamKg();
   document.getElementById('hdr').innerHTML=`
     <div class="top"><h1>🧪 Tanklar</h1><button class="icon" id="btnOkut">Okut</button><button class="icon" id="btnKroki">🗺️ Kroki</button>${yonetici?'<button class="icon" id="btnQR">QR</button><button class="icon" id="btnHizli">Hızlı Ekle</button><button class="icon" id="btnExcel">📊 Excel</button><button class="icon" id="btnAnaliz">🧪 Analiz</button>'+(veriYuklendi?'':'<button class="icon" id="btnVeri">Veri Yükle</button>')+'<button class="icon" id="btnYedek">Yedek</button>':''}<button class="icon" id="btnKilit">${yonetici?'🔓':'🔒'}</button></div>
     <input id="ara" placeholder="Tank ara: A-14, biber…" value="${arama}" autocomplete="off">
-    <div class="chips">${[['hepsi','Aktif'],...(notYetkisi()?[['notlu','📝 Notlu']]:[]),['acik','🔓 Açık'],['erken','⬇ Erken'],['hazir','Hazır'],['bugun','📅 Bugün Kapanacak'],['yakin','Yaklaşan'],['gecti','Geçen'],['dip','🧽 Temizlenecek'],['temiz','✓ Temiz']]
+    <div class="chips">${[['hepsi','Aktif'],...(notYetkisi()?[['notlu','📝 Notlu']]:[]),['acik','🔓 Açık'],['erken','⬇ Erken'],['hazir','Hazır'],['bugun','📅 Bugün Kapanacak'],['yakin','Yaklaşan'],['gecti','Geçen'],['dip','🧽 Temizlenecek'],['temiz','✓ Temiz'],...(say.metaBek?[['metaBek','⚗ Meta Bekliyor']]:[])]
       .map(([k,ad])=>`<button class="chip" data-f="${k}" aria-pressed="${filtre===k}">${ad}<b>${say[k]||0}</b></button>`).join('')}</div>
     <div class="tFiltreEk">
       <select id="tUrunSec">
@@ -2274,6 +2340,7 @@ function tankListesiCiz(){
     if(filtre==='dip') return !!t.bosaltildi && !t.temizlendi;
     if(filtre==='temiz') return !!t.bosaltildi && !!t.temizlendi;
     if(filtre==='notlu') return notSayi(t)>0;
+    if(filtre==='metaBek') return metaGerekliMi(t) && !metaAtildiMi(t);
     if(t.bosaltildi) return false;
     if(filtre==='hepsi') return true;
     if(filtre==='acik') return acikMi(t);
@@ -2331,6 +2398,7 @@ function tankListesiCiz(){
           ${(numuneGerekliMi(t)&&!numuneTamamlandiMi(t)&&numuneAlinmisMi(t))?`<span class="pill numBekPill">🧪 Sonuç Sınır Dışı · Tekrar Gerekli</span>`:''}
           ${(numuneGerekliMi(t)&&!numuneAlinmisMi(t))?`<span class="pill numBekPill">🧪 Numune Bekliyor</span>`:''}
           ${numuneTamamlandiMi(t)?`<span class="pill numAlPill">🧪 Numune ${numuneSayi(t)>1?'x'+numuneSayi(t)+' · ':''}${kisaTarih(numuneListe(t)[0].tarih)}</span>`:''}
+          ${(metaGerekliMi(t)&&!metaAtildiMi(t))?`<span class="pill metaBekPill">⚗ Meta Bekliyor</span>`:''}
           ${(notYetkisi()&&notSayi(t))?`<span class="pill notPill">📝 ${notSayi(t)}</span>`:''}
         </div>
         ${son?`<div class="olcumGrid">
@@ -3421,6 +3489,12 @@ function cizProgram(){
     <button class="btn ghost" id="agTara" style="margin-top:10px">Atlananları Bul</button>
     <div id="agSonuc"></div>
   </div>
+  <div class="sec pg-kalite">Meta Bekleyen Tanklar</div>
+  <div class="grafKutu">
+    <p class="hint" style="margin:0 0 8px">${metaEsigi()} günü geçen, dolu ve kapsamdaki ürünlerden Meta atılmamış tankları listeler. Seriye göre tanımlı miktar varsa toplu uygulanır.</p>
+    <button class="btn ghost" id="metaTara">Bekleyenleri Bul</button>
+    <div id="metaSonuc"></div>
+  </div>
   <div class="sec pg-kalite">Numune Alma Ayarları</div>
   <div class="grafKutu">
     <p class="hint" style="margin:0 0 8px">Hangi ürünlerde numune takip edilsin? Seçili olmayan ürünlerin tankları listede çıkmaz.</p>
@@ -3443,6 +3517,19 @@ function cizProgram(){
       <div><label style="font-size:12px">Asit % — maks</label><input type="text" inputmode="decimal" id="nnAsitMax" value="${numuneNormal().asit[1]}"></div>
     </div>
     <button class="btn ghost" id="numAyarKaydet" style="margin-top:10px">Kaydet</button>
+  </div>
+  <div class="sec pg-kalite">Meta Atma Ayarları<small style="font-weight:400;color:var(--muted)"> — seriye göre miktar</small></div>
+  <div class="grafKutu">
+    <p class="hint" style="margin:0 0 8px">Hangi ürünlerde Meta takip edilsin?</p>
+    <div class="tags" id="metaUrunSec">
+      ${urunler().map(u=>`<button type="button" class="tag ${metaUrunleri().includes(u)?'tagAktif':''}" data-metau="${u}">${u}</button>`).join('')}
+    </div>
+    <label style="margin-top:12px;display:block">Kaç gün sonra Meta atılsın?</label>
+    <input type="number" id="metaEsikIn" value="${metaEsigi()}" min="1" style="max-width:120px">
+    <label style="margin-top:14px;display:block">Seriye göre miktar (kg) <small style="font-weight:400;color:var(--muted)">— boş bırakılan seri toplu işlemde atlanır, elle girilir</small></label>
+    <div class="tuzgrid" style="margin-top:6px">${['A','B','C','D','E'].map(s=>
+      `<div><label>${s}</label><input type="text" id="metaMik${s}" inputmode="decimal" value="${metaMiktarTablosu()[s]||''}"></div>`).join('')}</div>
+    <button class="btn ghost" id="metaAyarKaydet" style="margin-top:10px">Kaydet</button>
   </div>
   <div class="sec pg-sistem">Tarih Denetimi</div>
   <div class="grafKutu">
@@ -3552,6 +3639,58 @@ function cizProgram(){
       await isemriYaz(); cizProgram(); toast(liste.length+' görev onaylandı');
     };
   };
+  const metaT=document.getElementById('metaTara');
+  if(metaT) metaT.onclick=()=>{
+    const alan=document.getElementById('metaSonuc');
+    const liste=metaBekleyenler();
+    if(!liste.length){
+      alan.innerHTML='<p class="hint" style="color:var(--yesil)">✓ Meta bekleyen tank yok.</p>';
+      return;
+    }
+    /* Seri bazlı miktarı tanımlı olanlar (otomatik uygulanabilir) ve
+       tanımsız seriye düşenler (elle girilmesi gerekir) ayrı gösterilir. */
+    const tanimli = liste.filter(t=>metaSeriMiktari(t)!=null);
+    const tanimsiz = liste.filter(t=>metaSeriMiktari(t)==null);
+    const seriGrup={};
+    tanimli.forEach(t=>{ const s=seri(t); (seriGrup[s]=seriGrup[s]||[]).push(t); });
+    const toplamKg = tanimli.reduce((n,t)=>n+(+metaSeriMiktari(t)||0),0);
+    alan.innerHTML=
+      '<p class="hint" style="color:var(--alarm);margin-top:10px"><b>'+liste.length+' tank Meta bekliyor</b>'
+      + (toplamKg?' · toplam <b>'+toplamKg.toLocaleString('tr-TR',{maximumFractionDigits:2})+' kg</b> (otomatik uygulanabilir kısım)':'')+'</p>'
+      + (Object.keys(seriGrup).length?'<p class="hint">'+Object.entries(seriGrup).sort((a,b)=>a[0].localeCompare(b[0])).map(([s,arr])=>`<b>${s} serisi</b>: ${arr.length} tank × ${metaMiktarTablosu()[s]} kg`).join(' · ')+'</p>':'')
+      + liste.slice(0,60).map(t=>{
+          const mk=metaSeriMiktari(t);
+          return `<div class="log"><span class="d">${t.kod}</span><span class="v">${gun(t)}. gün · ${t.urun||'—'}
+            ${mk!=null?' · <b>'+mk+' kg</b>':' · <span style="color:var(--alarm)">miktar tanımsız (elle girilecek)</span>'}</span></div>`;
+        }).join('')
+      + (liste.length>60?`<p class="hint">… ve ${liste.length-60} tank daha</p>`:'')
+      + '<div class="two" style="margin-top:10px">'
+      + '<button class="btn ghost" id="metaPaylas">📋 Listeyi Paylaş</button>'
+      + (tanimli.length?'<button class="btn" id="metaOnayla">'+tanimli.length+' Tankına Otomatik Uygula</button>':'')
+      + '</div>'
+      + (tanimsiz.length?'<p class="hint">'+tanimsiz.length+' tank tanımsız seride — bunlar için Program → Meta Atma Ayarları\'ndan miktar tanımla, ya da tank detayından elle ekle.</p>':'');
+    const mp=document.getElementById('metaPaylas');
+    if(mp) mp.onclick=()=>{
+      const metin='Meta bekleyen tanklar ('+liste.length+')\n'
+        + (toplamKg?'Toplam (tanımlı kısım): '+toplamKg+' kg\n':'') + '\n'
+        + liste.map(t=>{ const mk=metaSeriMiktari(t); return t.kod+'  '+gun(t)+'. gün  '+(t.urun||'')+(mk!=null?'  '+mk+' kg':'  (miktar tanımsız)'); }).join('\n');
+      if(navigator.share) navigator.share({title:'Meta bekleyenler', text:metin}).catch(()=>{});
+      else { try{ navigator.clipboard.writeText(metin); toast('Liste kopyalandı'); }catch(e){ toast('Kopyalanamadı'); } }
+    };
+    const mo=document.getElementById('metaOnayla');
+    if(mo) mo.onclick=async()=>{
+      const ozet=Object.entries(seriGrup).sort((a,b)=>a[0].localeCompare(b[0]))
+        .map(([s,arr])=>s+' serisi: '+arr.length+' tank × '+metaMiktarTablosu()[s]+' kg').join('\n');
+      const ok=await onayDialog('Meta Toplu Uygula',
+        tanimli.length+' tanka seriye göre tanımlı miktarda Meta eklenecek:\n\n'+ozet+
+        (tanimsiz.length?'\n\n('+tanimsiz.length+' tank tanımsız seride olduğu için bu işleme dahil edilmeyecek.)':''),
+        'Uygula');
+      if(!ok) return;
+      const {uygulanan}=await metaTopluUygula(tanimli);
+      metaT.click();
+      toast(uygulanan+' tanka Meta eklendi');
+    };
+  };
   let numUrunSecili = new Set(numuneUrunleri());
   document.querySelectorAll('#numUrunSec .tag').forEach(b=>{
     b.onclick=()=>{
@@ -3585,6 +3724,32 @@ function cizProgram(){
     numuneAyar.normal={ph:[phMin,phMax], tuz:[tuzMin,tuzMax], asit:[asitMin,asitMax]};
     await numuneAyarKaydet();
     toast('Numune ayarları tüm cihazlara kaydedildi'); ciz();
+  };
+  let metaUrunSecili = new Set(metaUrunleri());
+  document.querySelectorAll('#metaUrunSec .tag').forEach(b=>{
+    b.onclick=()=>{
+      const u=b.dataset.metau;
+      if(metaUrunSecili.has(u)) metaUrunSecili.delete(u); else metaUrunSecili.add(u);
+      b.classList.toggle('tagAktif');
+    };
+  });
+  const mak=document.getElementById('metaAyarKaydet');
+  if(mak) mak.onclick=async()=>{
+    const miktar={};
+    let hataliSeri=null;
+    ['A','B','C','D','E'].forEach(s=>{
+      const ham=document.getElementById('metaMik'+s).value.trim();
+      if(ham===''){ return; }   // bos birakilmasi gecerli - o seri toplu islemde atlanir
+      const v=parseFloat(ham.replace(',','.'));
+      if(isNaN(v)||v<0){ hataliSeri=s; return; }
+      miktar[s]=v;
+    });
+    if(hataliSeri){ toast('⚠ '+hataliSeri+' serisi için geçerli bir miktar gir (ondalık için nokta kullan)'); return; }
+    metaAyar.urunler=[...metaUrunSecili];
+    metaAyar.esik=+document.getElementById('metaEsikIn').value||META_ESIK_VARSAYILAN;
+    metaAyar.miktar=miktar;
+    await metaAyarKaydet();
+    toast('Meta ayarları tüm cihazlara kaydedildi'); ciz();
   };
   const td=document.getElementById('tarihDenetle');
   if(td) td.onclick=()=>{
@@ -4126,6 +4291,13 @@ function detay(id){
         <div class="tuzSatir tuzSatirToplam"><span>Toplam (${tz.adet} kez)</span><b>${tz.toplamKg} kg</b></div>
       </div>`;
     })()}
+    ${(metaGerekliMi(t)&&!metaAtildiMi(t))?(()=>{
+      const mk=metaSeriMiktari(t);
+      return `<div class="tuzToplamKart" style="background:#FFF7ED;border-color:#FED7AA">
+        <span style="color:#9A3412">⚗ Meta Bekliyor — ${metaEsigi()} günü geçti</span>
+        <div class="tuzSatir"><span>${mk!=null?'Seri miktarı: '+seri(t)+' → '+mk+' kg':'Bu seri için miktar tanımlı değil, elle gir'}</span></div>
+      </div>`;
+    })():''}
     ${notYetkisi()?`<div class="sec">Notlar${notListe(t).length?` <small style="font-weight:400;color:var(--muted)">(${notListe(t).length})</small>`:''}</div>
     ${notListe(t).length
       ? notListe(t).map(n=>`<div class="notKart">
@@ -5605,6 +5777,7 @@ function cizTankIsEmri(kod){
       const ok=await onayDialog('Notu Sil','"'+n.m.slice(0,80)+(n.m.length>80?'…':'')+'"\n\nBu not silinecek.','Sil');
       if(!ok) return;
       t.notlar2=notListe(t).filter(x=>x.id!==nid);
+      silinenNotlar.add(nid); setKaydet(K_SILINEN_NOT,silinenNotlar);
       await tankYaz(); cizTankIsEmri(kod); toast('Not silindi'); return;
     }
     const kb=ev.target.closest('.kimBtn');
@@ -5749,12 +5922,13 @@ function yedek(){
     // varsayılanı yalnızca Firebase gerçekten boşsa yaz (bağlantı hatasında yazma!)
     if(progDurum.ok) await progKaydet();
   }
-  const [_is,_veri,_dev,_pers,_hedef,_esles,_numAyar] = await Promise.all([
+  const [_is,_veri,_dev,_pers,_hedef,_esles,_numAyar,_metaAyar] = await Promise.all([
     sGet(K_IS,{}), sGet(K_VERI,false), sGet(K_DEV,{...DEV_VARSAYILAN}),
-    sGet(K_PERSONEL,[]), sGet(K_HEDEF,{}), sGet(K_URUNES,{}), sGet(K_NUMUNE_AYAR,null)
+    sGet(K_PERSONEL,[]), sGet(K_HEDEF,{}), sGet(K_URUNES,{}), sGet(K_NUMUNE_AYAR,null), sGet(K_META_AYAR,null)
   ]);
   isemri=_is;
   if(_numAyar && typeof _numAyar==='object') numuneAyar=_numAyar;
+  if(_metaAyar && typeof _metaAyar==='object') metaAyar=_metaAyar;
   veriYuklendi=!!_veri;
   devirdaimSure=_dev;
   personel=_pers;
