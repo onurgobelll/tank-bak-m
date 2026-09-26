@@ -150,6 +150,7 @@ main{padding:8px 16px 0}
 .numKart b{font-family:var(--cond);font-size:18px;letter-spacing:.04em;color:#5B21B6}
 .numKart span{display:block;font-size:11.5px;color:#6D28D9;margin-top:2px}
 .chip.chipNum{border-color:#DDD6FE;color:#5B21B6}
+.chip.chipMeta{border-color:#FED7AA;color:#9A3412}
 .chip.chipNum b{color:#7C3AED}
 .chip.chipNum[aria-pressed="true"]{background:#7C3AED;color:#fff;border-color:transparent}
 .chip.chipNum[aria-pressed="true"] b{color:#fff}
@@ -560,7 +561,7 @@ function revYaz(){
     fbIstek('/'+encodeURIComponent(K_REV)+'.json',{method:'PUT', body:JSON.stringify(v)}).catch(()=>{});
   }catch(e){}
 }
-const SURUM='23.09.2026 05:58';
+const SURUM='26.09.2026 10:51';
 let urunHedef={};
 const K_PERSONEL='tanktakip:personel', K_AD_KILIT='tanktakip:cihazKilit';
 /* v3 anahtarları: eski sürümlü cihazlar (eski önbellekli bilgisayar/telefon)
@@ -1104,7 +1105,7 @@ let tanklar=[], program={}, isemri={}, gorunum='isemri', filtre='hepsi', arama='
 /* Tesis kroki konumları — F-14 Bölge Şeması 2026 Sezon Excel'inden çıkarıldı, 09.09.2026. */
 const KROKI_POZISYON={"E-15":[37,0],"E-31":[40,0],"E-59":[41,0],"E-87":[44,0],"E-115":[45,0],"E-143":[48,0],"E-172":[49,0],"E-201":[52,0],"E-230":[53,0],"E-259":[56,0],"E-14":[37,1],"E-30":[40,1],"E-58":[41,1],"E-86":[44,1],"E-114":[45,1],"E-142":[48,1],"E-171":[49,1],"E-200":[52,1],"E-229":[53,1],"E-258":[56,1],"E-287":[57,1],"E-13":[37,2],"E-29":[40,2],"E-57":[41,2],"E-85":[44,2],"E-113":[45,2],"E-141":[48,2],"E-170":[49,2],"E-199":[52,2],"E-228":[53,2],"E-257":[56,2],"E-286":[57,2],"E-12":[37,3],"E-28":[40,3],"E-56":[41,3],"E-84":[44,3],"E-112":[45,3],"E-140":[48,3],"E-169":[49,3],"E-198":[52,3],"E-227":[53,3],"E-256":[56,3],"E-285":[57,3],"E-11":[37,4],"E-27":[40,4],"E-55":[41,4],"E-83":[44,4],"E-111":[45,4],"E-139":[48,4],"E-168":[49,4],"E-197":[52,4],"E-226":[53,4],"E-255":[56,4],"E-284":[57,4],"D-10":[23,5],"D-20":[26,5],"D-41":[27,5],"D-62":[30,5],"D-83":[33,5],"D-104":[36,5],"E-10":[37,5],"E-26":[40,5],"E-54":[41,5],"E-82":[44,5],"E-110":[45,5],"E-138":[48,5],"E-167":[49,5],"E-196":[52,5],"E-225":[53,5],"E-254":[56,5],"E-283":[57,5],"A-165":[7,6],"A-166":[10,6],"A-167":[11,6],"A-168":[14,6],"D-09":[23,6],"D-19":[26,6],"D-40":[27,6],"D-61":[30,6],"D-82":[33,6],"D-103":[36,6],"E-09":[37,6],"E-25":[40,6],"E-53":[41,6],"E-81":[44,6],"E-109":[45,6],"E-137":[48,6],"E-166":[49,6],"E-195":[52,6],"E-224":[53,6],"E-253":[56,6],"E-282":[57,6],"A-16":[0,7],"A-32":[3,7],"A-48":[6,7],"A-164":[7,7],"A-158":[10,7],"A-159":[11,7],"A-160":[14,7],"A-161":[15,7],"A-162":[18,7],"A-163":[19,7],"A-170":[22,7],"D-08":[23,7],"D-18":[26,7],"D-39":[27,7],"D-60":[30,7],"D-81":[33,7],"D-102":[36,7],"E-08":[37,7],"E-24":[40,7],"E-52":[41,7],"E-80":[44,7],"E-108":[45,7],"E-136":[48,7],"E-165":[49,7],"E-194":[52,7],"E-223":[53,7],"E-252":[56,7],"E-281":[57,7],"E-308":[60,7],"A-15":[0,8],"A-31":[3,8],"A-47":[6,8],"A-63":[7,8],"A-74":[10,8],"A-89":[11,8],"A-104":[14,8],"A-117":[15,8],"A-131":[18,8],"B-08":[19,8],"B-16":[22,8],"D-07":[23,8],"D-17":[26,8],"D-38":[27,8],"D-59":[30,8],"D-80":[33,8],"D-101":[36,8],"E-07":[37,8],"E-23":[40,8],"E-51":[41,8],"E-79":[44,8],"E-107":[45,8],"E-135":[48,8],"E-164":[49,8],"E-193":[52,8],"E-222":[53,8],"E-251":[56,8],"E-280":[57,8],"E-307":[60,8],"A-14":[0,9],"A-30":[3,9],"A-46":[6,9],"A-62":[7,9],"A-73":[10,9],"A-88":[11,9],"A-103":[14,9],"A-116":[15,9],"A-130":[18,9],"B-07":[19,9],"B-15":[22,9],"D-06":[23,9],"D-16":[26,9],"D-37":[27,9],"D-58":[30,9],"D-79":[33,9],"D-100":[36,9],"E-06":[37,9],"E-22":[40,9],"E-50":[41,9],"E-78":[44,9],"E-106":[45,9],"E-134":[48,9],"E-163":[49,9],"E-192":[52,9],"E-221":[53,9],"E-250":[56,9],"E-279":[57,9],"E-306":[60,9],"A-13":[0,10],"A-29":[3,10],"A-45":[6,10],"A-61":[7,10],"A-72":[10,10],"A-87":[11,10],"A-102":[14,10],"A-115":[15,10],"A-129":[18,10],"B-06":[19,10],"B-14":[22,10],"D-05":[23,10],"D-15":[26,10],"D-36":[27,10],"D-57":[30,10],"D-78":[33,10],"D-99":[36,10],"E-05":[37,10],"E-21":[40,10],"E-49":[41,10],"E-77":[44,10],"E-105":[45,10],"E-133":[48,10],"E-162":[49,10],"E-191":[52,10],"E-220":[53,10],"E-249":[56,10],"E-278":[57,10],"E-305":[60,10],"A-12":[0,11],"A-28":[3,11],"A-44":[6,11],"A-60":[7,11],"A-71":[10,11],"A-86":[11,11],"A-101":[14,11],"A-114":[15,11],"A-128":[18,11],"B-05":[19,11],"B-13":[22,11],"D-04":[23,11],"D-14":[26,11],"D-35":[27,11],"D-56":[30,11],"D-77":[33,11],"D-98":[36,11],"E-04":[37,11],"E-20":[40,11],"E-48":[41,11],"E-76":[44,11],"E-104":[45,11],"E-132":[48,11],"E-161":[49,11],"E-190":[52,11],"E-219":[53,11],"E-248":[56,11],"E-277":[57,11],"E-304":[60,11],"A-11":[0,12],"A-27":[3,12],"A-43":[6,12],"A-59":[7,12],"A-70":[10,12],"A-85":[11,12],"A-100":[14,12],"A-113":[15,12],"A-127":[18,12],"B-04":[19,12],"B-12":[22,12],"D-03":[23,12],"D-13":[26,12],"D-34":[27,12],"D-55":[30,12],"D-76":[33,12],"D-97":[36,12],"E-03":[37,12],"E-19":[40,12],"E-47":[41,12],"E-75":[44,12],"E-103":[45,12],"E-131":[48,12],"E-160":[49,12],"E-189":[52,12],"E-218":[53,12],"E-247":[56,12],"E-276":[57,12],"E-303":[60,12],"A-10":[0,13],"A-26":[3,13],"A-42":[6,13],"A-58":[7,13],"A-69":[10,13],"A-84":[11,13],"A-99":[14,13],"A-112":[15,13],"A-126":[18,13],"B-03":[19,13],"B-11":[22,13],"D-02":[23,13],"D-12":[26,13],"D-33":[27,13],"D-54":[30,13],"D-75":[33,13],"D-96":[36,13],"E-02":[37,13],"E-18":[40,13],"E-46":[41,13],"E-74":[44,13],"E-102":[45,13],"E-130":[48,13],"E-159":[49,13],"E-188":[52,13],"E-217":[53,13],"E-246":[56,13],"E-275":[57,13],"E-302":[60,13],"A-09":[0,14],"A-25":[3,14],"A-41":[6,14],"A-57":[7,14],"A-68":[10,14],"A-83":[11,14],"A-98":[14,14],"A-111":[15,14],"A-125":[18,14],"B-02":[19,14],"B-10":[22,14],"D-01":[23,14],"D-11":[26,14],"D-32":[27,14],"D-53":[30,14],"D-74":[33,14],"D-95":[36,14],"E-01":[37,14],"E-17":[40,14],"E-45":[41,14],"E-73":[44,14],"E-101":[45,14],"E-129":[48,14],"E-158":[49,14],"E-187":[52,14],"E-216":[53,14],"E-245":[56,14],"E-274":[57,14],"E-301":[60,14],"A-08":[0,17],"A-24":[3,17],"A-40":[6,17],"A-56":[7,17],"A-155":[10,17],"A-82":[11,17],"A-97":[14,17],"B-01":[19,17],"B-09":[22,17],"C-08":[23,17],"D-31":[27,17],"D-52":[30,17],"D-73":[33,17],"D-94":[36,17],"D-115":[37,17],"E-44":[41,17],"E-72":[44,17],"E-100":[45,17],"E-128":[48,17],"E-157":[49,17],"E-186":[52,17],"E-215":[53,17],"E-244":[56,17],"E-273":[57,17],"E-300":[60,17],"A-07":[0,18],"A-23":[3,18],"A-39":[6,18],"A-55":[7,18],"A-67":[10,18],"A-81":[11,18],"A-96":[14,18],"A-146":[15,18],"A-124":[18,18],"A-138":[19,18],"A-145":[22,18],"C-07":[23,18],"D-30":[27,18],"D-51":[30,18],"D-72":[33,18],"D-93":[36,18],"D-114":[37,18],"D-125":[40,18],"E-43":[41,18],"E-71":[44,18],"E-99":[45,18],"E-127":[48,18],"E-156":[49,18],"E-185":[52,18],"E-214":[53,18],"E-243":[56,18],"E-272":[57,18],"E-299":[60,18],"A-06":[0,19],"A-22":[3,19],"A-38":[6,19],"A-54":[7,19],"A-66":[10,19],"A-80":[11,19],"A-95":[14,19],"A-110":[15,19],"A-123":[18,19],"A-137":[19,19],"A-144":[22,19],"C-06":[23,19],"C-14":[26,19],"D-29":[27,19],"D-50":[30,19],"D-71":[33,19],"D-92":[36,19],"D-113":[37,19],"D-124":[40,19],"E-42":[41,19],"E-70":[44,19],"E-98":[45,19],"E-126":[48,19],"E-155":[49,19],"E-184":[52,19],"E-213":[53,19],"E-242":[56,19],"E-271":[57,19],"E-298":[60,19],"A-05":[0,20],"A-21":[3,20],"A-37":[6,20],"A-53":[7,20],"A-65":[10,20],"A-79":[11,20],"A-94":[14,20],"A-109":[15,20],"A-122":[18,20],"A-136":[19,20],"A-143":[22,20],"C-05":[23,20],"C-13":[26,20],"D-28":[27,20],"D-49":[30,20],"D-70":[33,20],"D-91":[36,20],"D-112":[37,20],"D-123":[40,20],"E-41":[41,20],"E-69":[44,20],"E-97":[45,20],"E-125":[48,20],"E-154":[49,20],"E-183":[52,20],"E-212":[53,20],"E-241":[56,20],"E-270":[57,20],"E-297":[60,20],"A-04":[0,21],"A-20":[3,21],"A-36":[6,21],"A-52":[7,21],"A-64":[10,21],"A-78":[11,21],"A-93":[14,21],"A-108":[15,21],"A-121":[18,21],"A-135":[19,21],"A-142":[22,21],"C-04":[23,21],"C-12":[26,21],"D-27":[27,21],"D-48":[30,21],"D-69":[33,21],"D-90":[36,21],"D-111":[37,21],"D-122":[40,21],"E-40":[41,21],"E-68":[44,21],"E-96":[45,21],"E-124":[48,21],"E-153":[49,21],"E-182":[52,21],"E-211":[53,21],"E-240":[56,21],"E-269":[57,21],"E-296":[60,21],"A-03":[0,22],"A-19":[3,22],"A-35":[6,22],"A-51":[7,22],"A-77":[11,22],"A-92":[14,22],"A-107":[15,22],"A-120":[18,22],"A-134":[19,22],"A-141":[22,22],"C-03":[23,22],"C-011":[26,22],"D-26":[27,22],"D-47":[30,22],"D-68":[33,22],"D-89":[36,22],"D-110":[37,22],"D-121":[40,22],"E-39":[41,22],"E-67":[44,22],"E-95":[45,22],"E-123":[48,22],"E-152":[49,22],"E-181":[52,22],"E-210":[53,22],"E-239":[56,22],"E-268":[57,22],"E-295":[60,22],"A-02":[0,23],"A-18":[3,23],"A-34":[6,23],"A-50":[7,23],"A-76":[11,23],"A-91":[14,23],"A-106":[15,23],"A-119":[18,23],"A-133":[19,23],"A-140":[22,23],"C-02":[23,23],"C-10":[26,23],"D-25":[27,23],"D-46":[30,23],"D-67":[33,23],"D-88":[36,23],"D-109":[37,23],"D-120":[40,23],"E-38":[41,23],"E-66":[44,23],"E-94":[45,23],"E-122":[48,23],"E-151":[49,23],"E-180":[52,23],"E-209":[53,23],"E-238":[56,23],"E-267":[57,23],"E-294":[60,23],"A-01":[0,24],"A-17":[3,24],"A-33":[6,24],"A-49":[7,24],"A-75":[11,24],"A-90":[14,24],"A-105":[15,24],"A-118":[18,24],"A-132":[19,24],"A-139":[22,24],"C-01":[23,24],"C-09":[26,24],"D-24":[27,24],"D-45":[30,24],"D-66":[33,24],"D-87":[36,24],"D-108":[37,24],"D-119":[40,24],"E-37":[41,24],"E-65":[44,24],"E-93":[45,24],"E-121":[48,24],"E-150":[49,24],"E-179":[52,24],"E-208":[53,24],"E-237":[56,24],"E-266":[57,24],"E-293":[60,24],"A-154":[11,25],"A-153":[14,25],"A-152":[15,25],"A-151":[18,25],"A-150":[19,25],"A-149":[22,25],"A-148":[23,25],"A-147":[26,25],"D-23":[27,25],"D-44":[30,25],"D-65":[33,25],"D-86":[36,25],"D-107":[37,25],"D-118":[40,25],"E-36":[41,25],"E-64":[44,25],"E-92":[45,25],"E-120":[48,25],"E-149":[49,25],"E-178":[52,25],"E-207":[53,25],"E-236":[56,25],"E-265":[57,25],"E-292":[60,25],"A-156":[23,26],"D-22":[27,26],"D-43":[30,26],"D-64":[33,26],"D-85":[36,26],"D-106":[37,26],"D-117":[40,26],"E-35":[41,26],"E-63":[44,26],"E-91":[45,26],"E-119":[48,26],"E-148":[49,26],"E-177":[52,26],"E-206":[53,26],"E-235":[56,26],"E-264":[57,26],"E-291":[60,26],"D-21":[27,27],"D-42":[30,27],"D-63":[33,27],"D-84":[36,27],"D-105":[37,27],"D-116":[40,27],"E-34":[41,27],"E-62":[44,27],"E-90":[45,27],"E-118":[48,27],"E-147":[49,27],"E-176":[52,27],"E-205":[53,27],"E-234":[56,27],"E-263":[57,27],"E-290":[60,27],"E-33":[41,28],"E-61":[44,28],"E-89":[45,28],"E-117":[48,28],"E-146":[49,28],"E-175":[52,28],"E-204":[53,28],"E-233":[56,28],"E-262":[57,28],"E-289":[60,28],"E-145":[49,29],"E-174":[52,29],"E-203":[53,29],"E-232":[56,29],"E-261":[57,29],"E-288":[60,29]};
 let krokiSecili=null;
-let tUrunFiltre='hepsi', tDolumSirala='';   // Tanklar sekmesi: ürün filtresi + dolum tarihine göre sıralama ('yeni'|'eski'|'')
+let tUrunFiltre='hepsi', tDolumSirala='';   // Tanklar sekmesi: ürün filtresi + sıralama ('yeni'|'eski'|'seri'|'')
 const bugunISO=()=>new Date().toISOString().slice(0,10);
 const gunFark=(a,b)=>{
   const da=new Date(a+'T00:00'), db=new Date(b+'T00:00');
@@ -1132,7 +1133,7 @@ const SINIF={devam:'on-time',yakin:'soon',bugunKapanacak:'bugunPill',hazir:'read
 function toast(m){const d=document.createElement('div');d.className='toast';d.textContent=m;
   document.body.appendChild(d);setTimeout(()=>d.remove(),1700);}
 
-function girdiDialog(baslik, detay, placeholder, tip){
+function girdiDialog(baslik, detay, placeholder, tip, onDeger){
   return new Promise(resolve=>{
     const ov=document.createElement('div');
     ov.className='onayOverlay';
@@ -1140,7 +1141,7 @@ function girdiDialog(baslik, detay, placeholder, tip){
       <div class="onayKutu">
         <p class="ob">${baslik}</p>
         ${detay?`<p class="od">${detay}</p>`:''}
-        <input id="gdIn" type="${tip||'text'}" ${tip==='number'?'inputmode="decimal" step="0.01"':''} placeholder="${placeholder||''}">
+        <input id="gdIn" type="${tip||'text'}" ${tip==='number'?'inputmode="decimal" step="0.01"':''} placeholder="${placeholder||''}" value="${onDeger||''}">
         <div class="two" style="margin-top:14px">
           <button class="btn ghost" id="gdIptal">İptal</button>
           <button class="btn" id="gdTamam">Kaydet</button>
@@ -2306,6 +2307,7 @@ function cizTanklar(){
       <div class="tDolumAralik">
         <button class="miniBtn ${tDolumSirala==='yeni'?'miniBtnAktif':''}" id="tSiralaYeni">⬇ Yeni→Eski</button>
         <button class="miniBtn ${tDolumSirala==='eski'?'miniBtnAktif':''}" id="tSiralaEski">⬆ Eski→Yeni</button>
+        <button class="miniBtn ${tDolumSirala==='seri'?'miniBtnAktif':''}" id="tSiralaSeri">🔤 A-Z (seri)</button>
         ${(tUrunFiltre!=='hepsi'||tDolumSirala)?`<button class="miniBtn" id="tFiltreTemizle">Temizle</button>`:''}
       </div>
     </div>`;
@@ -2324,6 +2326,7 @@ function cizTanklar(){
   document.getElementById('tUrunSec').onchange=e=>{ tUrunFiltre=e.target.value; cizTanklar(); };
   document.getElementById('tSiralaYeni').onclick=()=>{ tDolumSirala=(tDolumSirala==='yeni')?'':'yeni'; cizTanklar(); };
   document.getElementById('tSiralaEski').onclick=()=>{ tDolumSirala=(tDolumSirala==='eski')?'':'eski'; cizTanklar(); };
+  document.getElementById('tSiralaSeri').onclick=()=>{ tDolumSirala=(tDolumSirala==='seri')?'':'seri'; cizTanklar(); };
   const tft=document.getElementById('tFiltreTemizle');
   if(tft) tft.onclick=()=>{ tUrunFiltre='hepsi'; tDolumSirala=''; cizTanklar(); };
   document.getElementById('hdr').querySelector('.chips').onclick=e=>{
@@ -2354,6 +2357,10 @@ function tankListesiCiz(){
     liste.sort((a,b)=>String(b.baslangic||'').localeCompare(String(a.baslangic||''))||a.kod.localeCompare(b.kod,'tr',{numeric:true}));
   }else if(tDolumSirala==='eski'){
     liste.sort((a,b)=>String(a.baslangic||'').localeCompare(String(b.baslangic||''))||a.kod.localeCompare(b.kod,'tr',{numeric:true}));
+  }else if(tDolumSirala==='seri'){
+    /* Önce seri harfine göre grupla (A'lar bir arada, B'ler bir arada...),
+       sonra her serinin içinde kod numarasına göre sırala. */
+    liste.sort((a,b)=>seri(a).localeCompare(seri(b),'tr')||a.kod.localeCompare(b.kod,'tr',{numeric:true}));
   }else{
     const sira={gecti:0,bugunKapanacak:1,hazir:2,yakin:3,devam:4,dip:5,temiz:6};
     liste.sort((a,b)=>(acikMi(b)?1:0)-(acikMi(a)?1:0)||(b.erkenBitiren?1:0)-(a.erkenBitiren?1:0)||sira[durum(a)]-sira[durum(b)]||a.kod.localeCompare(b.kod,'tr',{numeric:true}));
@@ -2490,9 +2497,10 @@ function cizIsEmri(){
   const gecikVar=k=> k==='DEV' ? DEVIR_KODLARI.some(d=>gecikKodlar.has(d)) : gecikKodlar.has(k);
   if(ieGorev==='GEC'){ if(!gecikTumu.length) ieGorev='hepsi'; }
   else if(ieGorev==='NUMUNE'){ if(!numuneBekleyenler().length) ieGorev='hepsi'; }
+  else if(ieGorev==='META'){ if(!metaBekleyenler().length) ieGorev='hepsi'; }
   else if(ieGorev!=='hepsi' && !grupHepsi[ieGorev] && !gecikVar(ieGorev)) ieGorev='hepsi';
   let grup = ieGorev==='hepsi' ? grupHepsi
-           : (ieGorev==='GEC'||ieGorev==='NUMUNE') ? {}
+           : (ieGorev==='GEC'||ieGorev==='NUMUNE'||ieGorev==='META') ? {}
            : (grupHepsi[ieGorev] ? {[ieGorev]:grupHepsi[ieGorev]} : {});
   // devirdaim kodlarını (D/D2/DV) tek başlık altında birleştir
   const devVar=DEVIR_KODLARI.filter(k=>grup[k]);
@@ -2543,10 +2551,14 @@ function cizIsEmri(){
       const numC = numBek
         ? `<button class="chip chipNum" data-g="NUMUNE" aria-pressed="${ieGorev==='NUMUNE'}">🧪 Numune Bekleyen<b>${numBek}</b></button>`
         : '';
-      if(!tuzC && !urunC && !gecC && !numC) return '';
+      const metaBekSay=metaBekleyenler().filter(t=>ieUrun==='hepsi'||(t.urun||'—')===ieUrun).length;
+      const metaC = metaBekSay
+        ? `<button class="chip chipMeta" data-g="META" aria-pressed="${ieGorev==='META'}">⚗ Meta Bekleyen<b>${metaBekSay}</b></button>`
+        : '';
+      if(!tuzC && !urunC && !gecC && !numC && !metaC) return '';
       return `<div class="chips gorevChips" id="ieGorevChips">
         <button class="chip" data-g="hepsi" aria-pressed="${ieGorev==='hepsi'}">Tüm işler</button>
-        ${numC}${gecC}${tuzC}${urunC}
+        ${numC}${metaC}${gecC}${tuzC}${urunC}
       </div>`;
     })()}`;
   if(document.getElementById('ieChips')){
@@ -2569,7 +2581,11 @@ function cizIsEmri(){
   document.getElementById('btnKilit').onclick=yoneticiGirisi;
 
   const e=document.getElementById('ekran');
-  if(!liste.length){
+  /* Bugünün programlı görev listesi boş olsa bile Numune/Meta bekleyen
+     tanklar varsa (ya da chip zaten seçiliyse) erken çıkılmaz — o zaman
+     normal render akışı devam eder ve ilgili bölüm gösterilir. */
+  if(!liste.length && !numuneBekleyenler().length && !metaBekleyenler().length
+     && ieGorev!=='NUMUNE' && ieGorev!=='META'){
     /* Boş ekranda da onarım uyarısı görünmeli — asıl sorunu burada fark ediliyor */
     const kkBos=kapaliKalmisTanklar();
     const huBos=hedefUyusmayanTanklar();
@@ -2632,6 +2648,12 @@ function cizIsEmri(){
             return `<div><span>Numune Bekleyen</span><b style="color:#7C3AED">${nb.length}</b></div>
               <div><span>${numuneEsigi()}+ gün</span><b>${nb.length?nb.length:'—'}</b></div>
               <div><span>En eski</span><b>${nb.length?gun(nb[0])+'. gün':'—'}</b></div>`; })()
+        : ieGorev==='META'
+        ? (()=>{ const mb=metaBekleyenler().filter(t=>ieUrun==='hepsi'||(t.urun||'—')===ieUrun);
+            const toplamKg=mb.reduce((n,t)=>n+(+metaSeriMiktari(t)||0),0);
+            return `<div><span>Meta Bekleyen</span><b style="color:#9A3412">${mb.length}</b></div>
+              <div><span>${metaEsigi()}+ gün</span><b>${mb.length?mb.length:'—'}</b></div>
+              <div><span>Toplam kg</span><b>${toplamKg?toplamKg.toLocaleString('tr-TR',{maximumFractionDigits:2}):'—'}</b></div>`; })()
         : `<div><span>Görev</span><b>${bitti}/${toplamGorev}</b></div>
            <div><span>Tank</span><b>${liste.length}</b></div>
            <div><span>Tuz</span><b>${tuzToplam?tuzToplam+' kg':'—'}</b></div>`}
@@ -2654,7 +2676,7 @@ function cizIsEmri(){
         <span class="gecMetin"><b>${gecikTumu.length} iş geçmiş günlerden kalmış</b>Dokun ve tamamla</span>
         <span class="gecOk">›</span>
       </button>`:''}
-    ${(ieGorev==='GEC'||ieGorev==='NUMUNE') ? ''
+    ${(ieGorev==='GEC'||ieGorev==='NUMUNE'||ieGorev==='META') ? ''
       : (bitti>=toplamGorev?`<div class="tamamRozet">✓ Bugünün işleri tamam${ieUrun!=='hepsi'?' — '+ieUrun:''}</div>`
       :(yonetici?`<button class="btn hepsiBtn" id="hepsiOnay">Tümünü Onayla · ${toplamGorev-bitti} görev${ieUrun!=='hepsi'?' ('+ieUrun+')':''}</button>`:''))}
     ${ieGorev==='NUMUNE' ? (()=>{
@@ -2668,6 +2690,21 @@ function cizIsEmri(){
             <span class="gk">${t.kod}</span>
             <span class="gd"><b>${gun(t)}. gün</b> · ${t.urun||''}</span>
           </button>`).join('')}
+      </div>`;
+    })() : ''}
+    ${ieGorev==='META' ? (()=>{
+      const mb=metaBekleyenler().filter(t=>ieUrun==='hepsi'||(t.urun||'—')===ieUrun);
+      if(!mb.length) return '<div class="tamamRozet">✓ Meta bekleyen tank yok</div>';
+      const tanimli=mb.filter(t=>metaSeriMiktari(t)!=null);
+      return `<div class="grup">
+        <h3>⚗ Meta Bekleyen<small>${mb.length} tank${ieUrun!=='hepsi'?' · '+ieUrun:''}</small>
+          ${tanimli.length?`<button class="tumuBtn" id="metaTumu">Tümünü İşaretle ✓ (${tanimli.length})</button>`:''}</h3>
+        ${mb.map(t=>{ const mk=metaSeriMiktari(t);
+          return `<button class="gorev" data-metaisaret="${t.id}">
+            <span class="cb"></span>
+            <span class="gk">${t.kod}</span>
+            <span class="gd"><b>${gun(t)}. gün</b> · ${t.urun||''} ${mk!=null?'· <b>'+mk+' kg</b>':'· <span style="color:var(--alarm)">miktar tanımsız</span>'}</span>
+          </button>`; }).join('')}
       </div>`;
     })() : ''}
     ${gecikenler.length?`
@@ -2781,6 +2818,39 @@ function cizIsEmri(){
       const d=await numuneDialog(t.kod+' — Numune Alındı ('+gun(t)+'. gün)');
       if(d===null) return;
       await numuneEkle(id, d); cizIsEmri(); toast(t.kod+' numune kaydedildi');
+      return;
+    }
+    if(ev.target.closest('#metaTumu')){
+      if(!onayYetkisi()) return;
+      const mb=metaBekleyenler().filter(t=>ieUrun==='hepsi'||(t.urun||'—')===ieUrun);
+      const tanimli=mb.filter(t=>metaSeriMiktari(t)!=null);
+      if(!tanimli.length) return;
+      const ozet={}; tanimli.forEach(t=>{ const s=seri(t); (ozet[s]=ozet[s]||[]).push(t); });
+      const ozetMetin=Object.entries(ozet).sort((a,b)=>a[0].localeCompare(b[0]))
+        .map(([s,arr])=>s+' serisi: '+arr.length+' tank × '+metaSeriMiktari(arr[0])+' kg').join('\n');
+      const ok=await onayDialog('Meta — Tümünü İşaretle',
+        tanimli.length+' tanka seriye göre tanımlı miktarda Meta eklenecek:\n\n'+ozetMetin+
+        (mb.length>tanimli.length?'\n\n('+(mb.length-tanimli.length)+' tank tanımsız seride olduğu için dahil edilmeyecek.)':''),
+        'İşaretle');
+      if(!ok) return;
+      const {uygulanan}=await metaTopluUygula(tanimli);
+      cizIsEmri(); toast(uygulanan+' tank Meta atıldı olarak işaretlendi');
+      return;
+    }
+    const mi=ev.target.closest('[data-metaisaret]');
+    if(mi){
+      if(!onayYetkisi()) return;
+      const id=mi.dataset.metaisaret;
+      const t=tanklar.find(x=>x.id===id); if(!t) return;
+      const oneri=metaSeriMiktari(t);
+      const miktar=await girdiDialog(t.kod+' — Meta Atıldı ('+gun(t)+'. gün)',
+        seri(t)+' serisi için '+(oneri!=null?'önerilen miktar aşağıda dolu geldi, değiştirmek istersen üzerine yaz.':'tanımlı miktar yok, elle gir.'),
+        oneri!=null?'':'Örn: 5 kg', 'text', oneri!=null?String(oneri):'');
+      if(miktar===null) return;
+      const v=String(miktar).trim();
+      if(!v){ toast('Miktar girilmedi, kaydedilmedi'); return; }
+      (t.kimyasallar=t.kimyasallar||[]).unshift({ad:'Meta', miktar:v+(/kg/i.test(v)?'':' kg'), tarih:bugunISO(), k:kullaniciAdi()||'—', s:saatSimdi()});
+      await tankYaz(); cizIsEmri(); toast(t.kod+' Meta kaydedildi');
       return;
     }
     if(ev.target.closest('#kapaliUyariBtn')){
