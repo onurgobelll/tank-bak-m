@@ -561,7 +561,7 @@ function revYaz(){
     fbIstek('/'+encodeURIComponent(K_REV)+'.json',{method:'PUT', body:JSON.stringify(v)}).catch(()=>{});
   }catch(e){}
 }
-const SURUM='28.09.2026 04:33';
+const SURUM='28.09.2026 14:49';
 let urunHedef={};
 const K_PERSONEL='tanktakip:personel', K_AD_KILIT='tanktakip:cihazKilit';
 /* v3 anahtarları: eski sürümlü cihazlar (eski önbellekli bilgisayar/telefon)
@@ -1630,6 +1630,31 @@ function alfabetikSirala(liste){
 function metaBekleyenler(){
   return tanklar.filter(t=>metaGerekliMi(t) && !metaAtildiMi(t))
     .sort((a,b)=>gun(b)-gun(a));
+}
+/* Tüm Meta kayıtları: tankın şu anki partisi (t.kimyasallar) + yeniden
+   doldurulmuş tankların arşivlenmiş eski partileri (gecmis[].kimyasalArsiv).
+   Gün gün takip için düz bir liste döner. */
+function metaKayitlari(){
+  const out=[];
+  const kgOku=m=>{ const x=String(m||'').match(/[\d.,]+/); return x?(parseFloat(x[0].replace(',','.'))||0):0; };
+  tanklar.forEach(t=>{
+    (t.kimyasallar||[]).filter(k=>k.ad==='Meta').forEach(k=>
+      out.push({t, kod:t.kod, urun:t.urun||'—', tarih:k.tarih||'', miktar:k.miktar||'', kg:kgOku(k.miktar), kisi:k.k||'', saat:k.s||'', arsiv:false}));
+    (t.gecmis||[]).forEach(g=>{
+      (g.kimyasalArsiv||[]).filter(k=>k.ad==='Meta').forEach(k=>
+        out.push({t, kod:t.kod, urun:g.urun||'—', tarih:k.tarih||'', miktar:k.miktar||'', kg:kgOku(k.miktar), kisi:k.k||'', saat:k.s||'', arsiv:true}));
+    });
+  });
+  return out;
+}
+/* Güne göre grupla — en yeni gün üstte; gün içinde seri/kod sırası */
+function metaGunluk(){
+  const gun_={};
+  metaKayitlari().forEach(r=>{ (gun_[r.tarih||'—']=gun_[r.tarih||'—']||[]).push(r); });
+  return Object.entries(gun_)
+    .sort((a,b)=>String(b[0]).localeCompare(String(a[0])))
+    .map(([tarih,liste])=>({tarih, liste:liste.sort((a,b)=>seri(a.t).localeCompare(seri(b.t),'tr')||a.kod.localeCompare(b.kod,'tr',{numeric:true})),
+      kg:liste.reduce((n,r)=>n+r.kg,0)}));
 }
 async function metaAyarKaydet(){ await fbSet(K_META_AYAR, metaAyar); }
 /* Toplu Meta atama: seri bazlı tanımlı miktarı olan tankları otomatik
@@ -3571,6 +3596,12 @@ function cizProgram(){
     <button class="btn ghost" id="metaTara">Bekleyenleri Bul</button>
     <div id="metaSonuc"></div>
   </div>
+  <div class="sec pg-kalite">Meta Atılanlar<small style="font-weight:400;color:var(--muted)"> — gün gün takip</small></div>
+  <div class="grafKutu">
+    <p class="hint" style="margin:0 0 8px">Hangi gün hangi tanklara, ne kadar Meta atıldığını gösterir (eski partiler dahil).</p>
+    <button class="btn ghost" id="metaGecmisBtn">Meta Kayıtlarını Göster</button>
+    <div id="metaGecmisSonuc"></div>
+  </div>
   <div class="sec pg-kalite">Numune Alma Ayarları</div>
   <div class="grafKutu">
     <p class="hint" style="margin:0 0 8px">Hangi ürünlerde numune takip edilsin? Seçili olmayan ürünlerin tankları listede çıkmaz.</p>
@@ -3766,6 +3797,39 @@ function cizProgram(){
       metaT.click();
       toast(uygulanan+' tanka Meta eklendi');
     };
+  };
+  const mgb=document.getElementById('metaGecmisBtn');
+  if(mgb) mgb.onclick=()=>{
+    const alan=document.getElementById('metaGecmisSonuc');
+    const gunler=metaGunluk();
+    if(!gunler.length){ alan.innerHTML='<p class="hint" style="margin-top:10px">Henüz Meta kaydı yok.</p>'; return; }
+    const toplamKayit=gunler.reduce((n,g)=>n+g.liste.length,0);
+    const toplamKg=gunler.reduce((n,g)=>n+g.kg,0);
+    const fmtKg=v=>v?v.toLocaleString('tr-TR',{maximumFractionDigits:2})+' kg':'—';
+    const gunAd=t=>t==='—'?'Tarihsiz':kisaTarih(t);
+    let hepsi=false;
+    const ciz_=()=>{
+      const goster=hepsi?gunler:gunler.slice(0,10);
+      alan.innerHTML=
+        '<p class="hint" style="margin-top:10px"><b>'+gunler.length+' gün · '+toplamKayit+' kayıt · toplam '+fmtKg(toplamKg)+'</b></p>'
+        + goster.map(g=>`<div class="tuzToplamKart" style="background:#FFF7ED;border-color:#FED7AA;margin-top:8px">
+            <span style="color:#9A3412">${gunAd(g.tarih)} · ${g.liste.length} tank · ${fmtKg(g.kg)}</span>
+            ${g.liste.map(r=>`<div class="tuzSatir"><span>${r.kod} · ${r.urun}${r.arsiv?' <small>(eski parti)</small>':''}${r.kisi?' · '+r.kisi:''}${r.saat?' '+r.saat:''}</span><b>${r.miktar||'—'}</b></div>`).join('')}
+          </div>`).join('')
+        + ((!hepsi && gunler.length>10)?`<button class="btn ghost" id="metaGecmisTum" style="margin-top:10px">Tüm günleri göster (${gunler.length})</button>`:'')
+        + '<button class="btn ghost" id="metaGecmisPaylas" style="margin-top:10px">📋 Listeyi Paylaş</button>';
+      const tum=document.getElementById('metaGecmisTum');
+      if(tum) tum.onclick=()=>{ hepsi=true; ciz_(); };
+      const pay=document.getElementById('metaGecmisPaylas');
+      if(pay) pay.onclick=()=>{
+        const metin='Meta atılanlar · '+gunler.length+' gün · '+toplamKayit+' kayıt · '+fmtKg(toplamKg)+'\n\n'
+          + gunler.map(g=>gunAd(g.tarih)+' — '+g.liste.length+' tank · '+fmtKg(g.kg)+'\n'
+              + g.liste.map(r=>'  '+r.kod+'  '+r.urun+'  '+(r.miktar||'—')+(r.kisi?'  ('+r.kisi+')':'')).join('\n')).join('\n\n');
+        if(navigator.share) navigator.share({title:'Meta atılanlar', text:metin}).catch(()=>{});
+        else { try{ navigator.clipboard.writeText(metin); toast('Liste kopyalandı'); }catch(e){ toast('Kopyalanamadı'); } }
+      };
+    };
+    ciz_();
   };
   let numUrunSecili = new Set(numuneUrunleri());
   document.querySelectorAll('#numUrunSec .tag').forEach(b=>{
