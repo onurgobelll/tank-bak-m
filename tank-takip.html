@@ -561,7 +561,7 @@ function revYaz(){
     fbIstek('/'+encodeURIComponent(K_REV)+'.json',{method:'PUT', body:JSON.stringify(v)}).catch(()=>{});
   }catch(e){}
 }
-const SURUM='26.09.2026 10:51';
+const SURUM='28.09.2026 04:33';
 let urunHedef={};
 const K_PERSONEL='tanktakip:personel', K_AD_KILIT='tanktakip:cihazKilit';
 /* v3 anahtarları: eski sürümlü cihazlar (eski önbellekli bilgisayar/telefon)
@@ -1620,6 +1620,12 @@ function metaGerekliMi(t){
    değişince (yeniden dolum) bu kayıt otomatik "yok" sayılır. */
 function metaAtildiMi(t){
   return (t.kimyasallar||[]).some(k=>k.ad==='Meta' && String(k.tarih||'')>=String(t.baslangic||''));
+}
+/* Alfabetik gösterim: önce seri harfi (A'lar bir arada, B'ler bir arada...),
+   sonra kod numarası. Sadece çizimde kullanılır — bekleyen listelerinin kendi
+   sıralaması (en çok bekleyen önce) özet kartları için olduğu gibi kalır. */
+function alfabetikSirala(liste){
+  return liste.slice().sort((a,b)=>seri(a).localeCompare(seri(b),'tr')||a.kod.localeCompare(b.kod,'tr',{numeric:true}));
 }
 function metaBekleyenler(){
   return tanklar.filter(t=>metaGerekliMi(t) && !metaAtildiMi(t))
@@ -2680,7 +2686,7 @@ function cizIsEmri(){
       : (bitti>=toplamGorev?`<div class="tamamRozet">✓ Bugünün işleri tamam${ieUrun!=='hepsi'?' — '+ieUrun:''}</div>`
       :(yonetici?`<button class="btn hepsiBtn" id="hepsiOnay">Tümünü Onayla · ${toplamGorev-bitti} görev${ieUrun!=='hepsi'?' ('+ieUrun+')':''}</button>`:''))}
     ${ieGorev==='NUMUNE' ? (()=>{
-      const nb=numuneBekleyenler().filter(t=>ieUrun==='hepsi'||(t.urun||'—')===ieUrun);
+      const nb=alfabetikSirala(numuneBekleyenler().filter(t=>ieUrun==='hepsi'||(t.urun||'—')===ieUrun));
       if(!nb.length) return '<div class="tamamRozet">✓ Numune bekleyen tank yok</div>';
       return `<div class="grup">
         <h3>🧪 Numune Bekleyen<small>${nb.length} tank${ieUrun!=='hepsi'?' · '+ieUrun:''}</small>
@@ -2693,7 +2699,7 @@ function cizIsEmri(){
       </div>`;
     })() : ''}
     ${ieGorev==='META' ? (()=>{
-      const mb=metaBekleyenler().filter(t=>ieUrun==='hepsi'||(t.urun||'—')===ieUrun);
+      const mb=alfabetikSirala(metaBekleyenler().filter(t=>ieUrun==='hepsi'||(t.urun||'—')===ieUrun));
       if(!mb.length) return '<div class="tamamRozet">✓ Meta bekleyen tank yok</div>';
       const tanimli=mb.filter(t=>metaSeriMiktari(t)!=null);
       return `<div class="grup">
@@ -3712,7 +3718,7 @@ function cizProgram(){
   const metaT=document.getElementById('metaTara');
   if(metaT) metaT.onclick=()=>{
     const alan=document.getElementById('metaSonuc');
-    const liste=metaBekleyenler();
+    const liste=alfabetikSirala(metaBekleyenler());
     if(!liste.length){
       alan.innerHTML='<p class="hint" style="color:var(--yesil)">✓ Meta bekleyen tank yok.</p>';
       return;
