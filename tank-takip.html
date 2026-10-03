@@ -561,7 +561,7 @@ function revYaz(){
     fbIstek('/'+encodeURIComponent(K_REV)+'.json',{method:'PUT', body:JSON.stringify(v)}).catch(()=>{});
   }catch(e){}
 }
-const SURUM='28.09.2026 14:49';
+const SURUM='03.10.2026 12:06';
 let urunHedef={};
 const K_PERSONEL='tanktakip:personel', K_AD_KILIT='tanktakip:cihazKilit';
 /* v3 anahtarları: eski sürümlü cihazlar (eski önbellekli bilgisayar/telefon)
@@ -722,6 +722,10 @@ function setYukle(k){ try{ return new Set(JSON.parse(localStorage.getItem(k)||'[
 function setKaydet(k,s){ try{ localStorage.setItem(k,JSON.stringify([...s].slice(-500))); }catch(e){} }
 let silinenler=setYukle(K_SILINEN);
 let silinenNotlar=setYukle(K_SILINEN_NOT);
+const K_SILINEN_KIM='tanktakip:silinenKimyasallar';   // silinen/düzeltilen kimyasal kayıtları — birleştirme geri getirmesin
+const K_SILINEN_NUM='tanktakip:silinenNumuneler';     // silinen numune id'leri
+let silinenKimyasallar=setYukle(K_SILINEN_KIM);
+let silinenNumuneler=setYukle(K_SILINEN_NUM);
 const ALAN_ADI={baslangic:'Dolum tarihi',urun:'Ürün',hedefGun:'Hedef gün',kapasite:'Miktar',kod:'Tank kodu'};
 /* Kritik alan değişikliklerini tankın kendi geçmişine yaz */
 function tankLog(t, alan, eski, yeni, kaynak){
@@ -759,7 +763,12 @@ function tankBirlestir(yerel, bulut){
   t.notlar2   = diziBirlestir(yerel.notlar2, bulut.notlar2, n=>n.id||n.m)
                   .filter(n=>!silinenNotlar.has(n.id));
   t.olcumler  = diziBirlestir(yerel.olcumler,  bulut.olcumler,  o=>(o.tarih||'')+'|'+(o.ph||'')+'|'+(o.tuz||'')+'|'+(o.saat||''));
-  t.kimyasallar = diziBirlestir(yerel.kimyasallar, bulut.kimyasallar, x=>(x.tarih||'')+'|'+(x.ad||'')+'|'+(x.miktar||''));
+  t.kimyasallar = diziBirlestir(yerel.kimyasallar, bulut.kimyasallar, kimAnahtar)
+                    .filter(x=>!silinenKimyasallar.has(kimAnahtar(x)));
+  /* numuneler de birleştirilir (iki cihaz aynı anda girerse biri kaybolmasın);
+     bilinçli silinenler geri gelmez */
+  t.numune2   = diziBirlestir(yerel.numune2, bulut.numune2, m=>m.id||((m.tarih||'')+'|'+(m.ph||'')+'|'+(m.tuz||'')+'|'+(m.asit||'')))
+                  .filter(m=>!silinenNumuneler.has(m.id));
   t.log       = diziBirlestir(yerel.log,       bulut.log,       l=>(l.t||'')+'|'+(l.s||'')+'|'+(l.a||'')+'|'+(l.y||''));
   if(t.log && t.log.length>30) t.log.length=30;
   t.gecmis    = diziBirlestir(yerel.gecmis,    bulut.gecmis,    g=>(g.baslangic||'')+'|'+(g.urun||''));
@@ -1420,6 +1429,29 @@ async function notSilFn(id, nid){
   if(n.foto) fotoSil(n.foto);
 }
 const KIMYASALLAR=['Meta','Sorbat','Benzoat','Riboflavin'];
+/* Kimyasal kaydı kimliği: yeni kayıtlarda id, eski (id'siz) kayıtlarda tarih|ad|miktar */
+function kimId(){ return 'k'+Date.now().toString(36)+Math.random().toString(36).slice(2,6); }
+function kimAnahtar(x){ return x.id || ((x.tarih||'')+'|'+(x.ad||'')+'|'+(x.miktar||'')); }
+/* Tank detayı ve QR ekranı için ortak düzelt/sil — 'sil' | 'duz' | null döner */
+async function kimyasalDuzeltSil(t, i){
+  const kay=(t.kimyasallar||[])[i]; if(!kay) return null;
+  const sec=await secimDialog(kay.ad+' · '+(kay.miktar||'—')+' · '+kisaTarih(kay.tarih),
+    'Bu kayıtla ne yapmak istiyorsun?',
+    [{etiket:'Miktarı düzelt', tur:'ana'},{etiket:'Kaydı sil'}]);
+  if(sec===-1) return null;
+  if(sec===1){
+    silinenKimyasallar.add(kimAnahtar(kay)); setKaydet(K_SILINEN_KIM,silinenKimyasallar);
+    t.kimyasallar.splice(i,1);
+    return 'sil';
+  }
+  const ym=await girdiDialog(kay.ad+' — Düzelt','Doğru miktarı yaz.','Örn: 5 kg','text', kay.miktar||'');
+  if(ym===null) return null;
+  /* id'siz eski kayıt düzeltilince anahtarı değişir: eskisini işaretle ki buluttaki
+     eski hali birleştirmede "ikinci kayıt" olarak geri gelmesin */
+  if(!kay.id){ silinenKimyasallar.add(kimAnahtar(kay)); setKaydet(K_SILINEN_KIM,silinenKimyasallar); kay.id=kimId(); }
+  kay.miktar=ym; kay.k=kullaniciAdi()||'—'; kay.s=saatSimdi();
+  return 'duz';
+}
 function onayDialog(baslik, detay, evetMetin){
   return new Promise(resolve=>{
     const ov=document.createElement('div');
@@ -1666,7 +1698,7 @@ async function metaTopluUygula(liste){
   liste.forEach(t=>{
     const miktar=metaSeriMiktari(t);
     if(miktar==null){ atlanan.push(t); return; }
-    (t.kimyasallar=t.kimyasallar||[]).unshift({ad:'Meta', miktar:miktar+' kg', tarih:bugun, k:kisi, s:saat});
+    (t.kimyasallar=t.kimyasallar||[]).unshift({id:kimId(), ad:'Meta', miktar:miktar+' kg', tarih:bugun, k:kisi, s:saat});
     uygulanan++;
   });
   if(uygulanan) await tankYaz();
@@ -1692,6 +1724,7 @@ async function numuneSil(id, mid){
   const t=tanklar.find(x=>x.id===id); if(!t) return;
   if(!onayYetkisi()) return;
   t.numune2=numuneListe(t).filter(x=>x.id!==mid);
+  silinenNumuneler.add(mid); setKaydet(K_SILINEN_NUM,silinenNumuneler);
   await tankYaz();
 }
 /* Tankın N. gününe denk gelen takvim tarihi */
@@ -2400,7 +2433,13 @@ function tankListesiCiz(){
   const tt=temizKalmisTutarsizTanklar();
   const mk=mukerrerTankKodlari();
   const agk=ayniGunGecmisKayitlari();
+  const epk=eskiPartiKalintilari();
   const uyariHTML =
+    ((epk.length&&yonetici) ? `<button class="gecUyari" id="eskiPartiBtn" style="background:#FFF7ED;border-color:#FDBA74">
+    <span class="gecIkon">📦</span>
+    <span class="gecMetin"><b style="color:#9A3412">${epk.length} tankta eski partiden kalan kayıt var</b>${epk.slice(0,5).map(x=>x.t.kod).join(', ')}${epk.length>5?'…':''} — yeni ürün konmuş ama eski notlar/ölçümler duruyor. Dokun ve geçmişe taşı</span>
+    <span class="gecOk" style="color:#D97706">›</span>
+  </button>` : '') +
     ((mk.length&&yonetici) ? `<button class="gecUyari" id="mukerrerBtn" style="background:#FEF2F2;border-color:#FCA5A5">
     <span class="gecIkon">🔀</span>
     <span class="gecMetin"><b style="color:#991B1B">${mk.length} tank kodu MÜKERRER görünüyor</b>${mk.slice(0,5).map(x=>x.kodNorm).join(', ')}${mk.length>5?'…':''} — aynı tank iki ayrı kayıt olmuş (yazım farkı: D-24 / D-024). Dokun ve birleştir</span>
@@ -2468,6 +2507,23 @@ function tankListesiCiz(){
     let n=0;
     for(const x of mk){ if(await mukerrerTankBirlestir(x.kodNorm)) n++; }
     tankListesiCiz(); toast(n+' tank kodu birleştirildi');
+  };
+  const epb=document.getElementById('eskiPartiBtn');
+  if(epb) epb.onclick=async()=>{
+    const epk=eskiPartiKalintilari();
+    if(!epk.length) return;
+    const ozet=epk.slice(0,12).map(x=>{
+      const p=[]; if(x.notlar.length)p.push(x.notlar.length+' not'); if(x.olcum.length)p.push(x.olcum.length+' ölçüm');
+      if(x.numune.length)p.push(x.numune.length+' numune'); if(x.kimya.length)p.push(x.kimya.length+' kimyasal');
+      return '• '+x.t.kod+' ('+(x.t.urun||'—')+', dolum '+kisaTarih(x.t.baslangic)+'): '+p.join(', ');
+    }).join('\n');
+    const ok=await onayDialog('Eski Parti Kayıtlarını Ayır',
+      epk.length+' tankta, tarihi şu anki dolum tarihinden ÖNCE olan kayıtlar var:\n\n'+ozet+
+      (epk.length>12?'\n… ve '+(epk.length-12)+' tank daha':'')+
+      '\n\nBunlar eski ürüne ait. "Geçmiş Partiler"e taşınacak, hiçbiri silinmeyecek. Devam edilsin mi?','Taşı');
+    if(!ok) return;
+    await eskiPartiKalintiAyir(epk);
+    tankListesiCiz(); toast(epk.length+' tankın eski kayıtları geçmişe taşındı');
   };
   const agb=document.getElementById('ayniGunBtn');
   if(agb) agb.onclick=async()=>{
@@ -2880,7 +2936,7 @@ function cizIsEmri(){
       if(miktar===null) return;
       const v=String(miktar).trim();
       if(!v){ toast('Miktar girilmedi, kaydedilmedi'); return; }
-      (t.kimyasallar=t.kimyasallar||[]).unshift({ad:'Meta', miktar:v+(/kg/i.test(v)?'':' kg'), tarih:bugunISO(), k:kullaniciAdi()||'—', s:saatSimdi()});
+      (t.kimyasallar=t.kimyasallar||[]).unshift({id:kimId(), ad:'Meta', miktar:v+(/kg/i.test(v)?'':' kg'), tarih:bugunISO(), k:kullaniciAdi()||'—', s:saatSimdi()});
       await tankYaz(); cizIsEmri(); toast(t.kod+' Meta kaydedildi');
       return;
     }
@@ -3235,6 +3291,51 @@ async function ayniGunGecmisTemizle(liste){
 /* Aynı fiziksel tanka ait, kod yazımı farklı olduğu için (D-24 vs D-024)
    sistemde İKİ AYRI KAYIT oluşmuş olabilir — biri eski (boş/temiz), biri
    yeni (dolu). Bunları grupla; birden fazla kaydı olan kodları bildir. */
+/* Eski "Tankı düzenle" davranışı yüzünden yeni partide kalmış eski parti
+   kayıtları: tarihi şu anki dolum tarihinden ÖNCE olan not, ölçüm, numune ve
+   kimyasallar. (Aynı gün olanlar yeni partiye sayılır, dokunulmaz.) */
+function eskiPartiKalintilari(){
+  const out=[];
+  tanklar.forEach(t=>{
+    if(t.bosaltildi || !t.baslangic) return;
+    const b=String(t.baslangic), once=d=>!!d && String(d)<b;
+    const notlar=(Array.isArray(t.notlar2)?t.notlar2:[]).filter(n=>once(n.t));
+    const olcum=(t.olcumler||[]).filter(o=>once(o.tarih));
+    const numune=(t.numune2||[]).filter(m=>once(m.tarih));
+    const kimya=(t.kimyasallar||[]).filter(k=>once(k.tarih));
+    const n=notlar.length+olcum.length+numune.length+kimya.length;
+    if(n) out.push({t, notlar, olcum, numune, kimya, n});
+  });
+  return out;
+}
+async function eskiPartiKalintiAyir(liste){
+  liste.forEach(({t,notlar,olcum,numune,kimya})=>{
+    const b=String(t.baslangic), once=d=>!!d && String(d)<b;
+    /* eski ürün ve eski dolum tarihi değişiklik geçmişinden (en yeni kayıt önce) */
+    const lg=t.log||[];
+    const urunLog=lg.find(l=>l.a==='urun' && l.y===t.urun);
+    const basLog=lg.find(l=>l.a==='baslangic' && l.y===t.baslangic);
+    const tarihler=[...notlar.map(x=>x.t),...olcum.map(x=>x.tarih),...numune.map(x=>x.tarih),...kimya.map(x=>x.tarih)].filter(Boolean).sort();
+    (t.gecmis=t.gecmis||[]).unshift({
+      urun: (urunLog&&urunLog.e&&urunLog.e!=='—') ? urunLog.e : (t.urun||'Önceki parti'),
+      baslangic: (basLog&&basLog.e&&basLog.e!=='—') ? basLog.e : (tarihler[0]||''),
+      bitis: t.baslangic, kapasite:t.kapasite,
+      olcumSayi: olcum.length,
+      olcumArsiv: olcum.length?olcum:undefined,
+      numuneArsiv: numune.length?numune:undefined,
+      notArsiv: notlar.length?notlar:undefined,
+      kimyasalArsiv: kimya.length?kimya:undefined,
+      onarim:'yeni partiden ayrıldı'
+    });
+    if(t.gecmis.length>20) t.gecmis.length=20;
+    t.notlar2=(Array.isArray(t.notlar2)?t.notlar2:[]).filter(n=>!once(n.t));
+    t.olcumler=(t.olcumler||[]).filter(o=>!once(o.tarih));
+    t.numune2=(t.numune2||[]).filter(m=>!once(m.tarih));
+    t.kimyasallar=(t.kimyasallar||[]).filter(k=>!once(k.tarih));
+    t.parti=(+(t.parti||1))+1;   // buluttaki eski kopya birleştirmede bunları geri getirmesin
+  });
+  await tankYaz();
+}
 function mukerrerTankKodlari(){
   const grup={};
   tanklar.forEach(t=>{
@@ -4314,24 +4415,35 @@ function form(id){
     if(!kod){ q('#f_kod').focus(); return; }
     const veri={kod,kapasite:q('#f_kap').value.trim().toUpperCase(),...ortak};
     if(t){
+      /* YENİ PARTİ Mİ, DÜZELTME Mİ?
+         - Boşaltılmış tankta ürün/tarih değişti → kesin yeni dolum: dolumYaz ile
+           eski partinin notları, ölçümleri, numuneleri, kimyasalları arşive gider.
+         - Dolu tankta tarih + ürün birlikte değişti (ya da tank kapatılmıştı) →
+           kullanıcıya sorulur.
+         - Diğer her şey (tarih/ürün/kg düzeltmesi) → kayıtlara dokunulmaz. */
+      const bosTanktan  = !!t.bosaltildi;
+      const tarihDegisti = !!(veri.baslangic && veri.baslangic!==t.baslangic);
+      const urunDegisti  = !!(veri.urun && veri.urun!==t.urun);
+      let yeniParti=false;
+      if(bosTanktan && (tarihDegisti||urunDegisti)) yeniParti=true;
+      else if(!bosTanktan && tarihDegisti && (urunDegisti || t.kapatildi)){
+        const sec=await secimDialog(t.kod+' — Yeni parti mi?',
+          'Dolum tarihi'+(urunDegisti?' ve ürün':'')+' değişti.\n\n'+
+          '• Yeni parti: tank boşalıp yeniden dolduruldu. Eski notlar, ölçümler, numuneler ve kimyasallar "Geçmiş Partiler"e taşınır.\n\n'+
+          '• Sadece düzeltme: yanlış girilen bilgi düzeltilir, kayıtlar olduğu gibi kalır.',
+          [{etiket:'Yeni parti (eskileri arşivle)', tur:'ana'},{etiket:'Sadece düzeltme'}]);
+        if(sec===-1) return;
+        yeniParti=(sec===0);
+      }
       ['kod','urun','baslangic','hedefGun','kapasite'].forEach(a=>{
         if(veri[a]!==undefined) tankLog(t,a,t[a],veri[a],'Elle');
       });
-      /* Dolum tarihi GERÇEKTEN ileri alındıysa (aynı gün değil, farklı bir
-         tarihe geçildiyse) bu yeni parti demektir. Ürün adı tek başına
-         değişmesi YENİ PARTİ SAYILMAZ — aynı gün içinde yanlış girilen
-         ürünün elle düzeltilmesi olabilir (tank fiziksel olarak boşalıp
-         dolmadı). Sadece tarih değiştiyse önceki partiden kalan işaretler
-         temizlenir; salt ürün düzeltmesinde dokunulmaz, arşive düşmez. */
-      const tarihGercektenDegisti = veri.baslangic && veri.baslangic!==t.baslangic;
-      Object.assign(t,veri);
-      if(tarihGercektenDegisti){
-        t.kapatildi=''; t.kapatan=''; t.kapatmaSaat=''; t.kapanisKontrol=null;
-        t.bosaltildi=''; t.bosaltan=''; t.bosaltmaSaat='';
-        t.temizlendi=''; t.temizleyen=''; t.temizlikSaat='';
-        t.erkenBitiren=''; t.erkenTarih=''; t.hedefDusuk=''; t.acik=null;
-        t.parti=(+(t.parti||1))+1;
+      if(yeniParti){
+        dolumYaz(t, veri, false);
+        await tankYaz(); kapat(); ciz(); toast(t.kod+' yeni parti başladı — eski kayıtlar Geçmiş Partiler\'de');
+        return;
       }
+      Object.assign(t,veri);   // düzeltme: kayıtlar ve durum işaretleri olduğu gibi kalır
     }
     else tanklar.push({id:'t'+Date.now(),...veri,bosaltildi:'',olcumler:[],kimyasallar:[]});
     await tankYaz(); kapat(); ciz(); toast(t?'Güncellendi':'Tank eklendi');
@@ -4715,18 +4827,14 @@ function detay(id){
     }
     const miktar=await girdiDialog(ad+' — miktar', t.kod+' tankına eklenen miktar.', 'Örn: 5 kg');
     if(miktar===null) return;
-    (t.kimyasallar=t.kimyasallar||[]).unshift({ad, miktar, tarih:bugunISO(), k:kullaniciAdi(), s:saatSimdi()});
+    (t.kimyasallar=t.kimyasallar||[]).unshift({id:kimId(), ad, miktar, tarih:bugunISO(), k:kullaniciAdi(), s:saatSimdi()});
     await tankYaz(); detay(id); toast(ad+' kaydedildi');
   };
   p.querySelectorAll('.kimDuzelt').forEach(b=>{
     b.onclick=async()=>{
-      const i=+b.dataset.i, kay=(t.kimyasallar||[])[i];
-      if(!kay) return;
-      const ym=await girdiDialog(kay.ad+' — Düzelt','Miktarı değiştir; silmek için boşalt ve Kaydet.', kay.miktar||'');
-      if(ym===null) return;
-      if(ym===''){ t.kimyasallar.splice(i,1); toast('Silindi'); }
-      else { kay.miktar=ym; toast('Güncellendi'); }
-      await tankYaz(); detay(id);
+      const r=await kimyasalDuzeltSil(t, +b.dataset.i);
+      if(!r) return;
+      await tankYaz(); detay(id); toast(r==='sil'?'Silindi':'Güncellendi');
     };
   });
   const ty=q('#temizYap');
@@ -5878,13 +5986,9 @@ function cizTankIsEmri(kod){
     const kd=ev.target.closest('.kimDuzelt');
     if(kd){
       if(!onayYetkisi()) return;
-      const i=+kd.dataset.i, kay=(t.kimyasallar||[])[i];
-      if(!kay) return;
-      const ym=await girdiDialog(kay.ad+' — Düzelt','Miktarı değiştir; silmek için kutuyu boşalt ve Kaydet.', kay.miktar||'');
-      if(ym===null) return;
-      if(ym===''){ t.kimyasallar.splice(i,1); toast('Kayıt silindi'); }
-      else { kay.miktar=ym; kay.k=kullaniciAdi(); kay.s=saatSimdi(); toast('Güncellendi'); }
-      await tankYaz(); cizTankIsEmri(kod); return;
+      const r=await kimyasalDuzeltSil(t, +kd.dataset.i);
+      if(!r) return;
+      await tankYaz(); cizTankIsEmri(kod); toast(r==='sil'?'Kayıt silindi':'Güncellendi'); return;
     }
     if(ev.target.closest('#qrNotEkle')){
       if(!notYetkisi()){ toast('Bu cihazın not yetkisi yok'); return; }
@@ -5931,7 +6035,7 @@ function cizTankIsEmri(kod){
       const miktar=await girdiDialog(ad+' — miktar', t.kod+' tankına eklenen miktarı yaz (kg veya litre).', 'Örn: 5 kg');
       if(miktar===null) return;
       (t.kimyasallar=t.kimyasallar||[]).unshift({
-        ad, miktar, tarih:bugunISO(), k:kullaniciAdi(), s:saatSimdi()
+        id:kimId(), ad, miktar, tarih:bugunISO(), k:kullaniciAdi(), s:saatSimdi()
       });
       await tankYaz();
       cizTankIsEmri(kod);
