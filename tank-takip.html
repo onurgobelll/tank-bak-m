@@ -151,6 +151,12 @@ main{padding:8px 16px 0}
 .numKart span{display:block;font-size:11.5px;color:#6D28D9;margin-top:2px}
 .chip.chipNum{border-color:#DDD6FE;color:#5B21B6}
 .chip.chipMeta{border-color:#FED7AA;color:#9A3412}
+.pill.delikPill{background:#FEE2E2;color:#B91C1C;border-color:#FCA5A5;font-weight:700}
+.delikKart{background:#FEF2F2;border:1.5px solid #FCA5A5;border-radius:12px;padding:10px 12px;margin-bottom:8px}
+.delikKart b{font-family:var(--cond);font-size:18px;letter-spacing:.04em;color:#B91C1C;display:block}
+.delikKart span{display:block;font-size:12px;color:#991B1B;margin-top:2px}
+.delikKart .delikNot{color:var(--ink);font-size:13px;margin-top:5px}
+.metaMuafX{margin-left:auto;flex:0 0 auto;font-size:11.5px;color:#6B7280;border:1px solid #D1D5DB;border-radius:8px;padding:4px 8px;background:#fff;white-space:nowrap}
 .chip.chipNum b{color:#7C3AED}
 .chip.chipNum[aria-pressed="true"]{background:#7C3AED;color:#fff;border-color:transparent}
 .chip.chipNum[aria-pressed="true"] b{color:#fff}
@@ -561,7 +567,7 @@ function revYaz(){
     fbIstek('/'+encodeURIComponent(K_REV)+'.json',{method:'PUT', body:JSON.stringify(v)}).catch(()=>{});
   }catch(e){}
 }
-const SURUM='03.10.2026 12:06';
+const SURUM='08.10.2026 08:05';
 let urunHedef={};
 const K_PERSONEL='tanktakip:personel', K_AD_KILIT='tanktakip:cihazKilit';
 /* v3 anahtarları: eski sürümlü cihazlar (eski önbellekli bilgisayar/telefon)
@@ -748,6 +754,17 @@ function diziBirlestir(a, b, anahtar){
   return out;
 }
 /* Aynı tankın iki kopyasını birleştir: notlar/ölçümler/kimyasallar/log toplanır */
+/* Delik tanka aittir (partiye değil): parti hangi taraftan alınırsa alınsın
+   iki tarafın delik geçmişi birleşir. Geçmişte "kapatıldı" kaydı olan delik,
+   eski bir cihaz hâlâ açık sansa bile kapalı kalır; kapatılmamış bildirim korunur. */
+function arizaCoz(yerel, bulut, sonuc){
+  const gec=diziBirlestir(yerel.arizaGecmis, bulut.arizaGecmis, a=>a.id||((a.tarih||'')+'|'+(a.not||'')));
+  const kapali=new Set(gec.map(a=>a.id).filter(Boolean));
+  const acik=[yerel.ariza, bulut.ariza].find(a=>a && typeof a==='object' && !kapali.has(a.id));
+  sonuc.arizaGecmis=gec;
+  sonuc.ariza=acik||'';
+  return sonuc;
+}
 function tankBirlestir(yerel, bulut){
   if(!bulut) return yerel;
   /* PARTİ NUMARASI: yeniden doldurma her seferinde artar. Elimdeki parti
@@ -755,8 +772,8 @@ function tankBirlestir(yerel, bulut){
      eski partinin verileriyle BİRLEŞTİRME yapılmaz, yerel olduğu gibi kazanır.
      (Yoksa sıfırlanan notlar/ölçümler ve silinen "kapatıldı" işareti geri gelir.) */
   const yParti=+(yerel.parti||1), bParti=+(bulut.parti||1);
-  if(yParti > bParti) return {...yerel};
-  if(bParti > yParti) return {...bulut};
+  if(yParti > bParti) return arizaCoz(yerel, bulut, {...yerel});
+  if(bParti > yParti) return arizaCoz(yerel, bulut, {...bulut});
   const t={...bulut, ...yerel};                    // düz alanlarda elimdeki kazanır
   /* Bilinçli silinen notlar birleştirmede geri gelmesin — silinenNotlar
      kalıcı olarak (localStorage) hangi not id'lerinin silindiğini tutar. */
@@ -772,6 +789,7 @@ function tankBirlestir(yerel, bulut){
   t.log       = diziBirlestir(yerel.log,       bulut.log,       l=>(l.t||'')+'|'+(l.s||'')+'|'+(l.a||'')+'|'+(l.y||''));
   if(t.log && t.log.length>30) t.log.length=30;
   t.gecmis    = diziBirlestir(yerel.gecmis,    bulut.gecmis,    g=>(g.baslangic||'')+'|'+(g.urun||''));
+  arizaCoz(yerel, bulut, t);
   /* buluttaki not/ölçüm elimde yoksa bunlar geri gelmiş demektir */
   return t;
 }
@@ -1534,6 +1552,7 @@ function dolumYaz(t, veri, gecmisiKoru){
      yoksa tank iş emrinde çıkmaz ve durumu hep "hazır" görünür. */
   t.kapatildi=''; t.kapatan=''; t.kapatmaSaat=''; t.kapanisKontrol=null;
   t.acik=null; t.numune=null;
+  if(!gecmisiKoru){ t.metaMuaf=''; t.tarihDuzeltildi=''; }     // "Meta atılmayacak" kararı partiye özel — yeni dolumda kalkar
   if(!gecmisiKoru) t.parti = (+(t.parti||1)) + 1;   // yeni parti damgası
   t.olcumler=t.olcumler||[]; t.kimyasallar=t.kimyasallar||[]; t.numune2=t.numune2||[];
 }
@@ -1645,6 +1664,7 @@ function metaSeriMiktari(t){
 }
 function metaGerekliMi(t){
   if(t.bosaltildi) return false;
+  if(t.metaMuaf) return false;          // yönetici "bu partide Meta atılmayacak" dedi
   if(!metaUrunKapsaminda(t)) return false;
   return gun(t) >= metaEsigi();
 }
@@ -1687,6 +1707,86 @@ function metaGunluk(){
     .sort((a,b)=>String(b[0]).localeCompare(String(a[0])))
     .map(([tarih,liste])=>({tarih, liste:liste.sort((a,b)=>seri(a.t).localeCompare(seri(b.t),'tr')||a.kod.localeCompare(b.kod,'tr',{numeric:true})),
       kg:liste.reduce((n,r)=>n+r.kg,0)}));
+}
+/* ---------- DELİK: tankın kendisine ait arıza durumu ----------
+   t.ariza = {id,tarih,kisi,s,not,foto}  (açık delik)  ya da ''  (sağlam)
+   t.arizaGecmis = kapatılmış delikler (en yeni önce). Yeni dolumda silinmez. */
+function delikliTanklar(){ return tanklar.filter(t=>t.ariza); }
+/* Dolacak tanklar arasında delikli varsa listeyle uyar — true: devam */
+async function delikliDolumOnay(liste){
+  const dl=liste.filter(t=>t && t.ariza);
+  if(!dl.length) return true;
+  return await onayDialog('Delikli tank var!',
+    dl.length+' tank "delikli" olarak işaretli:\n\n'+
+    dl.slice(0,12).map(t=>'• '+t.kod+' — '+kisaTarih(t.ariza.tarih)+(t.ariza.not?' · '+t.ariza.not:'')).join('\n')+
+    (dl.length>12?'\n… ve '+(dl.length-12)+' tank daha':'')+
+    '\n\nDelik kapatıldıysa önce tank detayından "Delik kapatıldı (sağlam)" de. Yine de doldurulsun mu?','Yine de Doldur');
+}
+async function delikBildir(id){
+  if(!onayYetkisi()) return false;
+  const t=tanklar.find(x=>x.id===id); if(!t) return false;
+  const r=await notDialog(t.kod+' — Delik Bildir (yer, boyut… istersen fotoğraf)','');
+  if(r===null) return false;
+  t.ariza={id:'a'+Date.now().toString(36), tarih:bugunISO(), kisi:kullaniciAdi()||'—', s:saatSimdi(),
+    not:(r.metin||'').trim(), foto:r.fotoId||null};
+  await tankYaz(); return true;
+}
+async function delikKapat(id){
+  if(!onayYetkisi()) return false;
+  const t=tanklar.find(x=>x.id===id); if(!t||!t.ariza) return false;
+  const ok=await onayDialog(t.kod+' — Delik kapatıldı mı?',
+    'Tank sağlam olarak işaretlenecek. Bu kayıt tankın delik geçmişinde saklanır.','Sağlam');
+  if(!ok) return false;
+  (t.arizaGecmis=t.arizaGecmis||[]).unshift({...t.ariza, kapanis:{tarih:bugunISO(), kisi:kullaniciAdi()||'—', s:saatSimdi()}});
+  if(t.arizaGecmis.length>20) t.arizaGecmis.length=20;
+  t.ariza='';                      // silmek yerine boş — bulut birleştirmesi eski değeri geri getirmesin
+  await tankYaz(); return true;
+}
+function delikBlokHTML(t, pfx, gecmisListe){
+  const a=t.ariza, gec=t.arizaGecmis||[];
+  const esc=s=>String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;');
+  const gecHTML = (gecmisListe && gec.length)
+    ? `<p class="hint" style="margin:8px 0 2px"><b>Delik geçmişi (${gec.length})</b></p>`
+      + gec.slice(0,10).map(g=>`<div class="log"><span class="d">${kisaTarih(g.tarih)}</span><span class="v">${g.not?esc(g.not)+' · ':''}${g.kisi||'—'} bildirdi
+          <span class="n">✓ ${kisaTarih(g.kapanis&&g.kapanis.tarih)} kapatıldı · ${(g.kapanis&&g.kapanis.kisi)||'—'}</span></span></div>`).join('')
+    : '';
+  if(a){
+    return `<div class="delikKart">
+        <b>🕳 DELİKLİ TANK</b>
+        <span>${kisaTarih(a.tarih)} · ${a.kisi||'—'}${a.s?' · '+a.s:''} · ${gunFark(a.tarih,bugunISO())>0?gunFark(a.tarih,bugunISO())+' gündür açık':'bugün bildirildi'}</span>
+        ${a.not?`<span class="delikNot">${esc(a.not)}</span>`:''}
+        ${a.foto?`<button class="btn ghost" id="${pfx}DelikFoto" style="margin-top:8px;padding:7px;font-size:12.5px">📷 Fotoğrafı gör</button>`:''}
+        <button class="btn" id="${pfx}DelikKapat" style="margin-top:8px;background:var(--yesil);border-color:var(--yesil)">✓ Delik kapatıldı (sağlam)</button>
+      </div>` + gecHTML;
+  }
+  return `<button class="btn ghost" id="${pfx}DelikBildir" style="color:var(--alarm)">🕳 Delik Bildir</button>`
+    + (gec.length && !gecmisListe ? `<p class="hint" style="margin:4px 0 0">Daha önce ${gec.length} kez delik kaydı var, son kapanış ${kisaTarih(gec[0].kapanis&&gec[0].kapanis.tarih)}.</p>` : '')
+    + gecHTML;
+}
+function delikBagla(kok, t, pfx, yenile){
+  const b=kok.querySelector('#'+pfx+'DelikBildir');
+  if(b) b.onclick=async()=>{ if(await delikBildir(t.id)){ yenile(); toast(t.kod+' delikli olarak işaretlendi'); } };
+  const k=kok.querySelector('#'+pfx+'DelikKapat');
+  if(k) k.onclick=async()=>{ if(await delikKapat(t.id)){ yenile(); toast(t.kod+' sağlam olarak işaretlendi'); } };
+  const f=kok.querySelector('#'+pfx+'DelikFoto');
+  if(f) f.onclick=()=>{ if(t.ariza&&t.ariza.foto) fotoGoster(t.ariza.foto); };
+}
+function metaMuaflar(){ return tanklar.filter(t=>!t.bosaltildi && t.metaMuaf); }
+async function metaMuafYap(id){
+  if(!yonetici){ toast('Bu işlem için yönetici girişi gerekli'); return false; }
+  const t=tanklar.find(x=>x.id===id); if(!t) return false;
+  const ok=await onayDialog(t.kod+' — Meta atılmayacak',
+    t.kod+' ('+(t.urun||'')+', '+gun(t)+'. gün) bu partide Meta listesinden çıkarılacak.\n\n'+
+    'Tank boşaltılıp yeniden doldurulunca işaret kendiliğinden kalkar. Tank detayından geri alabilirsin.','Listeden Çıkar');
+  if(!ok) return false;
+  t.metaMuaf={tarih:bugunISO(), kisi:kullaniciAdi()||'Yönetici', s:saatSimdi()};
+  await tankYaz(); return true;
+}
+async function metaMuafGeriAl(id){
+  if(!yonetici){ toast('Bu işlem için yönetici girişi gerekli'); return false; }
+  const t=tanklar.find(x=>x.id===id); if(!t) return false;
+  t.metaMuaf='';
+  await tankYaz(); return true;
 }
 async function metaAyarKaydet(){ await fbSet(K_META_AYAR, metaAyar); }
 /* Toplu Meta atama: seri bazlı tanımlı miktarı olan tankları otomatik
@@ -2294,7 +2394,7 @@ function cizKroki(){
     const yaziRenk = koyuMu ? '#fff' : '#1F2937';
     const gunBilgi = (t && !t.bosaltildi) ? gun(t)+'/'+t.hedefGun : '';
     return `<g class="krokiTank" data-kod="${kod}">
-      <rect x="${x}" y="${y}" width="${boyut}" height="${boyut}" rx="8" fill="${renk}" stroke="rgba(0,0,0,.08)" stroke-width="1"/>
+      <rect x="${x}" y="${y}" width="${boyut}" height="${boyut}" rx="8" fill="${renk}" stroke="${(t&&t.ariza)?'#DC2626':'rgba(0,0,0,.08)'}" stroke-width="${(t&&t.ariza)?5:1}"/>
       <text x="${x+boyut/2}" y="${y+boyut/2-6}" text-anchor="middle" font-size="15" font-weight="700" fill="${yaziRenk}" font-family="var(--cond)">${kod}</text>
       ${gunBilgi?`<text x="${x+boyut/2}" y="${y+boyut/2+13}" text-anchor="middle" font-size="11" fill="${yaziRenk}" opacity="0.9">${gunBilgi}</text>`:''}
     </g>`;
@@ -2314,6 +2414,7 @@ function cizKroki(){
         `<span><i style="background:${r}"></i>${u}</span>`).join('')}
       <span><i style="background:#9CA3AF"></i>Dip (temizlenecek)</span>
       <span><i style="background:#F3F4F6;border:1px solid #ddd"></i>Temiz/boş</span>
+      <span><i style="background:#fff;border:2.5px solid #DC2626"></i>🕳 Delikli</span>
     </div>
   `;
 
@@ -2326,9 +2427,10 @@ function cizKroki(){
       if(!t){
         balon.innerHTML=`<b>${kod}</b><span>Sistemde kayıtlı değil</span>`;
       }else if(t.bosaltildi){
-        balon.innerHTML=`<b>${kod}</b><span>${t.temizlendi?'✓ Temiz':'🧽 Temizlenecek'}</span>`;
+        balon.innerHTML=`<b>${kod}</b>${t.ariza?'<span style="color:#DC2626;font-weight:700">🕳 Delikli</span>':''}<span>${t.temizlendi?'✓ Temiz':'🧽 Temizlenecek'}</span>
+          <button id="krokiDetayBtn" data-id="${t.id}">Tank detayını aç ›</button>`;
       }else{
-        balon.innerHTML=`<b>${kod}</b><span>${t.urun||'—'} · ${gun(t)}/${t.hedefGun} gün</span>
+        balon.innerHTML=`<b>${kod}</b>${t.ariza?'<span style="color:#DC2626;font-weight:700">🕳 Delikli</span>':''}<span>${t.urun||'—'} · ${gun(t)}/${t.hedefGun} gün</span>
           <button id="krokiDetayBtn" data-id="${t.id}">Tank detayını aç ›</button>`;
       }
       balon.style.display='block';
@@ -2346,8 +2448,9 @@ function cizKroki(){
   };
 }
 function cizTanklar(){
-  const say={hepsi:0,hazir:0,yakin:0,gecti:0,dip:0,temiz:0,erken:0,bugun:0,acik:0,notlu:0,metaBek:0};
+  const say={hepsi:0,hazir:0,yakin:0,gecti:0,dip:0,temiz:0,erken:0,bugun:0,acik:0,notlu:0,metaBek:0,delik:0};
   tanklar.forEach(t=>{
+    if(t.ariza) say.delik++;
     if(t.bosaltildi){ if(t.temizlendi) say.temiz++; else say.dip++; return;}
     say.hepsi++; const d=durum(t); if(say[d]!==undefined) say[d]++;
     if(t.erkenBitiren) say.erken++;
@@ -2360,7 +2463,7 @@ function cizTanklar(){
   document.getElementById('hdr').innerHTML=`
     <div class="top"><h1>🧪 Tanklar</h1><button class="icon" id="btnOkut">Okut</button><button class="icon" id="btnKroki">🗺️ Kroki</button>${yonetici?'<button class="icon" id="btnQR">QR</button><button class="icon" id="btnHizli">Hızlı Ekle</button><button class="icon" id="btnExcel">📊 Excel</button><button class="icon" id="btnAnaliz">🧪 Analiz</button>'+(veriYuklendi?'':'<button class="icon" id="btnVeri">Veri Yükle</button>')+'<button class="icon" id="btnYedek">Yedek</button>':''}<button class="icon" id="btnKilit">${yonetici?'🔓':'🔒'}</button></div>
     <input id="ara" placeholder="Tank ara: A-14, biber…" value="${arama}" autocomplete="off">
-    <div class="chips">${[['hepsi','Aktif'],...(notYetkisi()?[['notlu','📝 Notlu']]:[]),['acik','🔓 Açık'],['erken','⬇ Erken'],['hazir','Hazır'],['bugun','📅 Bugün Kapanacak'],['yakin','Yaklaşan'],['gecti','Geçen'],['dip','🧽 Temizlenecek'],['temiz','✓ Temiz'],...(say.metaBek?[['metaBek','⚗ Meta Bekliyor']]:[])]
+    <div class="chips">${[['hepsi','Aktif'],...(notYetkisi()?[['notlu','📝 Notlu']]:[]),['acik','🔓 Açık'],['erken','⬇ Erken'],['hazir','Hazır'],['bugun','📅 Bugün Kapanacak'],['yakin','Yaklaşan'],['gecti','Geçen'],['dip','🧽 Temizlenecek'],['temiz','✓ Temiz'],...(say.metaBek?[['metaBek','⚗ Meta Bekliyor']]:[]),...(say.delik?[['delik','🕳 Delikli']]:[])]
       .map(([k,ad])=>`<button class="chip" data-f="${k}" aria-pressed="${filtre===k}">${ad}<b>${say[k]||0}</b></button>`).join('')}</div>
     <div class="tFiltreEk">
       <select id="tUrunSec">
@@ -2404,6 +2507,7 @@ function tankListesiCiz(){
   let liste=tanklar.filter(t=>{
     if(q && !((t.kod+' '+(t.urun||'')).toLocaleLowerCase('tr').includes(q))) return false;
     if(tUrunFiltre!=='hepsi' && (t.urun||'')!==tUrunFiltre) return false;
+    if(filtre==='delik') return !!t.ariza;
     if(filtre==='dip') return !!t.bosaltildi && !t.temizlendi;
     if(filtre==='temiz') return !!t.bosaltildi && !!t.temizlendi;
     if(filtre==='notlu') return notSayi(t)>0;
@@ -2468,6 +2572,7 @@ function tankListesiCiz(){
         <div class="row1"><span class="kod">${t.kod}</span><span class="kap">${t.kapasite||''}</span></div>
         <div class="urun">${t.urun||'—'}</div>
         <div class="meta">
+          ${t.ariza?`<span class="pill delikPill">🕳 Delikli</span>`:''}
           ${t.erkenBitiren?`<span class="pill erkenPill">⬇ ERKEN ${t.hedefGun}G</span>`:''}
           <span class="pill ${SINIF[d]}">${ETIKET[d]}</span>
           <span class="pill">${g}/${t.hedefGun} gün</span>
@@ -2791,7 +2896,9 @@ function cizIsEmri(){
             <span class="cb"></span>
             <span class="gk">${t.kod}</span>
             <span class="gd"><b>${gun(t)}. gün</b> · ${t.urun||''} ${mk!=null?'· <b>'+mk+' kg</b>':'· <span style="color:var(--alarm)">miktar tanımsız</span>'}</span>
+            ${yonetici?`<span class="metaMuafX" data-metamuaf="${t.id}">✕ Atılmayacak</span>`:''}
           </button>`; }).join('')}
+        ${metaMuaflar().length?`<p class="hint" style="margin:8px 0 0">🚫 ${metaMuaflar().length} tank "Meta atılmayacak" olarak işaretli — Program → Kalite'den ya da tank detayından geri alınabilir.</p>`:''}
       </div>`;
     })() : ''}
     ${gecikenler.length?`
@@ -2922,6 +3029,12 @@ function cizIsEmri(){
       if(!ok) return;
       const {uygulanan}=await metaTopluUygula(tanimli);
       cizIsEmri(); toast(uygulanan+' tank Meta atıldı olarak işaretlendi');
+      return;
+    }
+    const mmx=ev.target.closest('[data-metamuaf]');
+    if(mmx){
+      ev.stopPropagation();
+      if(await metaMuafYap(mmx.dataset.metamuaf)){ cizIsEmri(); toast('Meta listesinden çıkarıldı'); }
       return;
     }
     const mi=ev.target.closest('[data-metaisaret]');
@@ -3298,6 +3411,7 @@ function eskiPartiKalintilari(){
   const out=[];
   tanklar.forEach(t=>{
     if(t.bosaltildi || !t.baslangic) return;
+    if(t.tarihDuzeltildi && t.tarihDuzeltildi===t.baslangic) return;   // tarih elle düzeltildi, kayıtlar bu partiye ait
     const b=String(t.baslangic), once=d=>!!d && String(d)<b;
     const notlar=(Array.isArray(t.notlar2)?t.notlar2:[]).filter(n=>once(n.t));
     const olcum=(t.olcumler||[]).filter(o=>once(o.tarih));
@@ -3696,6 +3810,10 @@ function cizProgram(){
     <p class="hint" style="margin:0 0 8px">${metaEsigi()} günü geçen, dolu ve kapsamdaki ürünlerden Meta atılmamış tankları listeler. Seriye göre tanımlı miktar varsa toplu uygulanır.</p>
     <button class="btn ghost" id="metaTara">Bekleyenleri Bul</button>
     <div id="metaSonuc"></div>
+    ${(()=>{ const mm=metaMuaflar(); return (yonetici&&mm.length)?`
+      <p class="hint" style="margin:14px 0 4px"><b>🚫 Meta atılmayacak (${mm.length})</b> — bu partide listeden çıkarılanlar</p>
+      ${alfabetikSirala(mm).map(t=>`<div class="log"><span class="d">${t.kod}</span><span class="v">${t.urun||''} · ${gun(t)}. gün · ${t.metaMuaf.kisi||'—'} ${kisaTarih(t.metaMuaf.tarih)}
+        <button class="miniBtn" data-metamuafgeri="${t.id}">Geri al</button></span></div>`).join('')}`:''; })()}
   </div>
   <div class="sec pg-kalite">Meta Atılanlar<small style="font-weight:400;color:var(--muted)"> — gün gün takip</small></div>
   <div class="grafKutu">
@@ -3847,6 +3965,9 @@ function cizProgram(){
       await isemriYaz(); cizProgram(); toast(liste.length+' görev onaylandı');
     };
   };
+  document.querySelectorAll('[data-metamuafgeri]').forEach(b=>b.onclick=async()=>{
+    if(await metaMuafGeriAl(b.dataset.metamuafgeri)){ cizProgram(); toast('Tekrar Meta listesinde'); }
+  });
   const metaT=document.getElementById('metaTara');
   if(metaT) metaT.onclick=()=>{
     const alan=document.getElementById('metaSonuc');
@@ -4397,6 +4518,8 @@ function form(id){
       if(!sr||!(s>=b)){ toast('Seri ve numaraları kontrol et'); return; }
       /* toplu eklemede hedef gün alanı elle değiştirilmediyse, her tank kendi serisine göre hesaplansın */
       const topluHedef = hedefElleDegisti ? (+q('#f_hedef').value||null) : null;
+      { const hedefler=[]; for(let i=b;i<=s;i++){ const kn=kodNormal(kodDuzelt(sr+'-'+i)); const bt=tanklar.find(x=>kodNormal(x.kod)===kn&&x.bosaltildi); if(bt) hedefler.push(bt); }
+        if(!await delikliDolumOnay(hedefler)) return; }
       let n=0;
       for(let i=b;i<=s;i++){
         const kod=kodDuzelt(sr+'-'+i);
@@ -4438,12 +4561,14 @@ function form(id){
       ['kod','urun','baslangic','hedefGun','kapasite'].forEach(a=>{
         if(veri[a]!==undefined) tankLog(t,a,t[a],veri[a],'Elle');
       });
+      if(yeniParti && !await delikliDolumOnay([t])) return;
       if(yeniParti){
         dolumYaz(t, veri, false);
         await tankYaz(); kapat(); ciz(); toast(t.kod+' yeni parti başladı — eski kayıtlar Geçmiş Partiler\'de');
         return;
       }
       Object.assign(t,veri);   // düzeltme: kayıtlar ve durum işaretleri olduğu gibi kalır
+      if(tarihDegisti) t.tarihDuzeltildi=veri.baslangic;   // aynı parti, tarih düzeltildi — önceki kayıtlar bu partiye ait
     }
     else tanklar.push({id:'t'+Date.now(),...veri,bosaltildi:'',olcumler:[],kimyasallar:[]});
     await tankYaz(); kapat(); ciz(); toast(t?'Güncellendi':'Tank eklendi');
@@ -4548,8 +4673,15 @@ function detay(id){
       return `<div class="tuzToplamKart" style="background:#FFF7ED;border-color:#FED7AA">
         <span style="color:#9A3412">⚗ Meta Bekliyor — ${metaEsigi()} günü geçti</span>
         <div class="tuzSatir"><span>${mk!=null?'Seri miktarı: '+seri(t)+' → '+mk+' kg':'Bu seri için miktar tanımlı değil, elle gir'}</span></div>
+        ${yonetici?`<button class="btn ghost" id="metaMuafBtn" style="margin-top:8px;font-size:12.5px;padding:8px">🚫 Bu tanka Meta atılmayacak</button>`:''}
       </div>`;
     })():''}
+    ${(t.metaMuaf && !t.bosaltildi && !metaAtildiMi(t))?`<div class="tuzToplamKart" style="background:#F3F4F6;border-color:#D1D5DB">
+        <span style="color:#4B5563">🚫 Bu partide Meta atılmayacak</span>
+        <div class="tuzSatir"><span>${kisaTarih(t.metaMuaf.tarih)} · ${t.metaMuaf.kisi||'—'}${t.metaMuaf.s?' · '+t.metaMuaf.s:''}</span></div>
+        ${yonetici?`<button class="btn ghost" id="metaMuafGeri" style="margin-top:8px;font-size:12.5px;padding:8px">↩ Geri al (Meta listesine dön)</button>`:''}
+      </div>`:''}
+    ${delikBlokHTML(t,'d',true)}
     ${notYetkisi()?`<div class="sec">Notlar${notListe(t).length?` <small style="font-weight:400;color:var(--muted)">(${notListe(t).length})</small>`:''}</div>
     ${notListe(t).length
       ? notListe(t).map(n=>`<div class="notKart">
@@ -4745,6 +4877,9 @@ function detay(id){
   const tAc=q('#tankAcBtn'); if(tAc) tAc.onclick=()=>tankAc(id);
   const aG=q('#acikGun'); if(aG) aG.onclick=()=>acikGuncelle(id);
   const agr=q('#acikGeriAl'); if(agr) agr.onclick=()=>acikGeriAlFn(id);
+  const mmb=q('#metaMuafBtn'); if(mmb) mmb.onclick=async()=>{ if(await metaMuafYap(id)){ kapat(); detay(id); toast('Meta listesinden çıkarıldı'); } };
+  delikBagla(p, t, 'd', ()=>{ kapat(); detay(id); });
+  const mmg=q('#metaMuafGeri'); if(mmg) mmg.onclick=async()=>{ if(await metaMuafGeriAl(id)){ kapat(); detay(id); toast('Tekrar Meta listesinde'); } };
   const pB=q('#pBosalt');
   if(pB) pB.onclick=async()=>{
     if(!onayYetkisi()) return;
@@ -4980,6 +5115,8 @@ function hizliOnizleGoster(p, satirlarMetin){
   `;
   const btn=q('#hz_uygula');
   if(btn) btn.onclick=async()=>{
+    // DELİKLİ TANK KONTROLÜ
+    if(!await delikliDolumOnay(gecerli.filter(x=>x.eylem==='dolum').map(x=>aktifTankBul(x.kod)||bosTankBul(x.kod)))) return;
     // DOLU TANK KONTROLÜ
     const cakisan=gecerli.filter(x=>x.eylem==='dolum' && aktifTankBul(x.kod));
     let cakismaKarari='atla';
@@ -5459,6 +5596,8 @@ function excelOnizle(p, satirlar){
       if(s2===-1) return;
       tarihDegistir = (s2===1);
     }
+    // DELİKLİ TANK KONTROLÜ — boş tanka yapılacak dolumlar
+    if(!await delikliDolumOnay(kayitlar.map(k=>!aktifTankBul(k.kod) && bosTankBul(k.kod)))) return;
     window.__exOnceki=JSON.parse(JSON.stringify(tanklar));
     let eklendi=0, guncellendi=0, atlandi=0, partiYeni=0;
     const bugun=bugunISO();
@@ -5844,7 +5983,9 @@ function cizTankIsEmri(kod){
       ${t.temizlendi
         ?`<div class="empty"><b>✓ Tank temiz</b>${kisaTarih(t.temizlendi)}${t.temizleyen?' · '+t.temizleyen:''} — yeni dolum için hazır.</div>`
         :`<div class="empty" style="border-color:var(--amber)"><b>Dip · Temizlenecek</b>${g} gün fermente edildi, ${kisaTarih(t.bosaltildi)}'de boşaltıldı.</div>
-          <button class="btn" id="qrTemiz">Temizlik Yapıldı</button>`}`;
+          <button class="btn" id="qrTemiz">Temizlik Yapıldı</button>`}
+      ${delikBlokHTML(t,'q',false)}`;
+      delikBagla(e, t, 'q', ()=>cizTankIsEmri(kod));
       const tb2=e.querySelector('#qrTemiz');
       if(tb2) tb2.onclick=async()=>{
         if(!onayYetkisi()) return;
@@ -5960,9 +6101,11 @@ function cizTankIsEmri(kod){
          <button class="btn ghost" id="qrAcikGun">Kalan Miktarı Güncelle</button>
          <button class="btn ghost" id="qrAcikGeriAl" style="margin-top:8px;color:var(--alarm)">↩ Yanlışlıkla İşaretledim, Geri Al</button>`
       : `<button class="btn ghost" id="qrTankAc">🔓 Ürün Çektim (yarım kaldı)</button>`}
+    ${delikBlokHTML(t,'q',false)}
     <button class="btn danger" id="qrBosalt">Tankı Boşalt</button>
     <p class="hint">Boşaltma kaydı adınla ve saatle kaydedilir.</p>
   `;
+  delikBagla(e, t, 'q', ()=>cizTankIsEmri(kod));
   const qta=e.querySelector('#qrTankAc');
   if(qta) qta.onclick=async()=>{ await tankAc(t.id); if(qrGoruntuKod) cizTankIsEmri(kod); };
   const qag=e.querySelector('#qrAcikGun');
